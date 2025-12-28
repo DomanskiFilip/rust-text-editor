@@ -1,54 +1,98 @@
 use crate::tui::drawing::Draw;
 use crossterm::{
-    cursor::{MoveTo, position, Hide, Show, EnableBlinking, DisableBlinking},
-    execute,
-    terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode, DisableLineWrap},
+    cursor::{ DisableBlinking, EnableBlinking, Hide, MoveTo, Show, position, SetCursorStyle },
+    queue,
+    style::Print,
+    terminal::{ Clear, ClearType, DisableLineWrap, disable_raw_mode, enable_raw_mode }
 };
-use std::io::stdout;
+use std::io::{ stdout, Error, Write };
+
+#[derive(Copy, Clone)]
+pub struct Position {
+    pub x: u16,
+    pub y: u16,
+}
+
+// Cursor struct for cursor customisation
+pub struct Cursor {
+    pub color: &'static str,
+    pub style: SetCursorStyle,
+}
 
 pub struct Terminal;
 
 impl Terminal {
-    pub fn initialize() -> Result<(), std::io::Error> {
+    
+    const CURSOR_SETTINGS: Cursor = Cursor { 
+        color: "yellow", 
+        style: SetCursorStyle::BlinkingBar 
+    };
+    
+    // initialize tui
+    pub fn initialize() -> Result<(), Error> {
         enable_raw_mode()?;
-        execute!(stdout(), DisableLineWrap, Hide)?;
-        // hide cursor
-        let _ = execute!(stdout(), Hide);
+        // Queue all initial setup commands
+        queue!(stdout(), DisableLineWrap, Hide)?;
         Self::clear_screen()?;
+        // set cursor color
+        queue!(stdout(), Self::CURSOR_SETTINGS.style)?;
+        Self::set_cursor_color(Self::CURSOR_SETTINGS.color)?;
         Draw::draw_margin()?;
         Draw::draw_footer()?;
-        // show cursor
-        let _ = execute!(stdout(), Show);
-        let _ = execute!(stdout(), EnableBlinking);
-        Self::move_cursor_to(4, 0)?;
+        queue!(stdout(), Show, EnableBlinking)?;
+        Self::move_cursor_to(Position { x: 4, y: 0 })?;
+        // Single flush to render everything at once
+        Self::execute()?;
         Ok(())
     }
 
-    pub fn terminate() -> Result<(), std::io::Error> {
-        // hide cursor
-        let _ = execute!(stdout(), DisableBlinking);
-        execute!(stdout(), Hide)?;
+    // terminate tui
+    pub fn terminate() -> Result<(), Error> {
+        // show cursor
+        Self::reset_cursor_color()?;
+        queue!(stdout(), DisableBlinking, Show)?;
+        Self::execute()?;
+        // draw Godbye msg
         disable_raw_mode()?;
         Self::clear_screen()?;
-        // print Goodbye msg
-        Self::move_cursor_to(0, 0)?;
+        Self::move_cursor_to(Position { x: 0, y: 0 })?;
+        Self::execute()?;
         println!("Goodbye.");
         Ok(())
     }
 
-    pub fn clear_screen() -> Result<(), std::io::Error> {
-        execute!(stdout(), Clear(ClearType::All))?;
+    pub fn clear_screen() -> Result<(), Error> {
+        queue!(stdout(), Clear(ClearType::All))?;
+        Ok(())
+    }
+    
+    pub fn set_cursor_color(color: &str) -> Result<(), Error> {
+        // \x1b]12; is the start of the "Change Cursor Color" sequence
+        // \x07 is the string terminator (Bell character)
+        queue!(stdout(), Print(format!("\x1b]12;{}\x07", color)))?;
         Ok(())
     }
 
-    fn move_cursor_to(x: u16, y: u16) -> Result<(), std::io::Error> {
-        execute!(stdout(), MoveTo(x, y))?;
+    pub fn reset_cursor_color() -> Result<(), Error> {
+        queue!(stdout(), Print("\x1b]112\x07"))?;
         Ok(())
     }
 
-    pub fn next_line() -> Result<(), std::io::Error> {
+    pub fn move_cursor_to(pos: Position) -> Result<(), Error> {
+        queue!(stdout(), MoveTo(pos.x, pos.y))?;
+        Ok(())
+    }
+
+    pub fn next_line() -> Result<(), Error> {
         let (_, y) = position()?;
-        Self::move_cursor_to(4, y + 1)?;
+        Self::move_cursor_to(Position { x: 4, y: y + 1 })?;
+        stdout().flush()?;
+        Ok(())
+    }
+
+    // The "Flush" method - sends all queued commands to the terminal
+    pub fn execute() -> Result<(), Error> {
+        stdout().flush()?;
         Ok(())
     }
 }

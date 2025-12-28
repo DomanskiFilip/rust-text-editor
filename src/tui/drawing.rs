@@ -1,19 +1,31 @@
-use std::io::stdout;
+use std::io::{stdout, Error };
 use crossterm::{
     style::{Print, Color, SetForegroundColor, ResetColor},
     terminal::size,
-    execute,
+    queue,
     cursor::MoveTo,
 };
+
+#[derive(Copy, Clone)]
+pub struct Size {
+    pub height: u16,
+    pub width: u16,
+}
 
 pub struct Draw;
 
 impl Draw {
-    pub fn draw_margin() -> Result<(), std::io::Error> {
-        let (_width, height) = size()?;
+    pub fn get_size() -> Result<Size, Error> {
+        let (width, height) = size()?;
+        Ok(Size { width, height })
+    }
+    
+    pub fn draw_margin() -> Result<(), Error> {
+        let size = Self::get_size()?;
         
-        for i in 0..height - 1 {
-            execute!(
+        // Loop from top to bottom (minus the footer line)
+        for i in 0..size.height - 1 {
+            queue!(
                 stdout(),
                 MoveTo(0, i),
                 SetForegroundColor(Color::DarkGrey),
@@ -24,23 +36,24 @@ impl Draw {
         Ok(())
     }
     
-    pub fn draw_footer() -> Result<(), std::io::Error> {
-        let (width, height) = size()?;
+    pub fn draw_footer() -> Result<(), Error> {
+        let size = Self::get_size()?;
+        let footer_row = size.height - 1;
         
-        execute!(
+        queue!(
             stdout(),
-            MoveTo(0, height - 1), 
+            MoveTo(0, footer_row), 
             SetForegroundColor(Color::DarkGrey),
             Print("ctrl + q = quit |"),
-            MoveTo(width / 2, height - 1),
+            MoveTo(size.width / 2, footer_row),
             Print("© Filip Domanski"),
             ResetColor,
         )?;
         Ok(())
     }
 
-    pub fn print_character(character: &str) -> Result<(), std::io::Error> {
-        execute!(stdout(), Print(character))?;
+    pub fn print_character(character: &str) -> Result<(), Error> {
+        queue!(stdout(), Print(character))?;
         Ok(())
     }
 }

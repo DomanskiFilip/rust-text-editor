@@ -48,6 +48,7 @@ impl TerminalEditor {
                             Action::Print => {
                                 if let KeyCode::Char(c) = event.code {
                                     Draw::print_character(&c.to_string())?;
+                                    Terminal::execute()?;
                                 }
                             }
                         }
