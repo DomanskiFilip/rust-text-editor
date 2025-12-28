@@ -1,16 +1,14 @@
 // editor module handles the editor's state and logic
-mod main_error_wrapper;
-mod actions;
-mod shortcuts;
-mod terminal;
 mod drawing;
+mod main_error_wrapper;
+mod terminal;
 
-use crossterm::event::{ read, Event::Key, KeyCode };
-use main_error_wrapper::MainErrorWrapper;
-use shortcuts::Shortcuts;
-use actions::Action;
-use terminal::Terminal;
+use crate::core::actions::Action;
+use crate::core::shortcuts::Shortcuts;
+use crossterm::event::{Event::Key, KeyCode, read};
 use drawing::Draw;
+use main_error_wrapper::MainErrorWrapper;
+use terminal::Terminal;
 
 pub struct TerminalEditor {
     quit_program: bool,
@@ -18,7 +16,9 @@ pub struct TerminalEditor {
 
 impl TerminalEditor {
     pub fn default() -> Self {
-        Self { quit_program: false }
+        Self {
+            quit_program: false,
+        }
     }
 
     pub fn run(&mut self) {
@@ -30,7 +30,6 @@ impl TerminalEditor {
 
     // handle action logic
     fn main_loop(&mut self) -> Result<(), std::io::Error> {
-        
         // main program loop
         loop {
             if let Key(event) = read()? {
@@ -39,7 +38,7 @@ impl TerminalEditor {
                     // logic to handle actions
                     match action {
                         Action::NextLine => {
-                            Terminal::next_line();
+                            let _ = Terminal::next_line();
                         }
                         Action::Quit => {
                             self.quit_program = true;
@@ -58,7 +57,7 @@ impl TerminalEditor {
                 break;
             }
         }
-        
+
         Ok(())
     }
 }

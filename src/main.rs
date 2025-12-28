@@ -1,8 +1,9 @@
-mod terminal_editor;
+mod core;
+mod tui;
 
-use terminal_editor::TerminalEditor;
+use tui::TerminalEditor;
 
-fn main() {        
+fn main() {
     // run the main program loop
     TerminalEditor::default().run();
 }

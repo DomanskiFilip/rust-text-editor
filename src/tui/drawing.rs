@@ -15,7 +15,7 @@ impl Draw {
         match size() {
             Ok((_width, height)) => {
                 // Print line numbers
-                for i in 0..height - 1 {
+                for i in 0..height {
                     match execute!(
                         stdout(),
                         MoveTo(0, i),

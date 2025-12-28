@@ -1,34 +1,42 @@
 // terminal module handles terminal related operations
-use std::io::stdout;
+use crate::tui::drawing::Draw;
 use crossterm::{
-    execute,
-    terminal::{ enable_raw_mode, disable_raw_mode, Clear, ClearType },
     cursor::{ MoveTo, position },
+    execute,
+    terminal::{ Clear, ClearType, disable_raw_mode, enable_raw_mode, DisableLineWrap },
 };
-use crate::terminal_editor::drawing::Draw;
+use std::io::stdout;
 
 pub struct Terminal;
 
 impl Terminal {
     pub fn initialize() {
         match enable_raw_mode() {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(error) => {
                 eprintln!("Failed to enable raw mode: {error:#?}");
                 return;
             }
         }
+        
+        match execute!(stdout(), DisableLineWrap) {
+            Ok(_) => {}
+            Err(error) => {
+                eprintln!("Failed to disable line wrap: {error:#?}");
+                return;
+            }
+        }
 
         match Self::clear_screen() {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(error) => {
                 eprintln!("Failed to clear screen: {error:#?}");
                 return;
             }
         }
-        
+
         match Draw::draw_margin() {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(error) => {
                 eprintln!("Failed to margin: {error:#?}");
                 return;
@@ -36,7 +44,7 @@ impl Terminal {
         }
 
         match Draw::draw_footer() {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(error) => {
                 eprintln!("Failed to draw footer: {error:#?}");
                 return;
@@ -44,7 +52,7 @@ impl Terminal {
         }
 
         match Self::move_cursor_to(4, 0) {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(error) => {
                 eprintln!("Failed to move cursor: {error:#?}");
                 return;
@@ -54,23 +62,23 @@ impl Terminal {
 
     pub fn terminate() {
         match disable_raw_mode() {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(error) => eprintln!("Failed to disable raw mode: {error:#?}"),
         }
 
         match Self::clear_screen() {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(error) => eprintln!("Failed to clear screen: {error:#?}"),
         }
-        
+
         match Self::move_cursor_to(0, 0) {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(error) => {
                 eprintln!("Failed to move cursor: {error:#?}");
                 return;
             }
         }
-        
+
         println!("Goodbye.");
     }
 
@@ -87,7 +95,7 @@ impl Terminal {
             Err(error) => Err(error),
         }
     }
-    
+
     pub fn next_line() -> Result<(), std::io::Error> {
         match execute!(stdout(), MoveTo(4, position().unwrap().1 + 1)) {
             Ok(_) => Ok(()),
