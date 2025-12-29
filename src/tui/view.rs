@@ -192,19 +192,6 @@ impl View {
         Ok(())
     }
     
-    pub fn move_left(&mut self, caret: &mut Caret) -> Result<(), Error> {
-        let pos = caret.get_position();
-        let buffer_line_idx = pos.y as usize + self.scroll_offset;
-        
-        let (new_offset, needs_render) = caret.move_left(self.scroll_offset)?;
-        self.scroll_offset = new_offset;
-        if needs_render {
-            self.render()?;
-        }
-        self.clamp_cursor_to_line(caret)?;
-        Ok(())
-    }
-    
     pub fn move_right(&mut self, caret: &mut Caret) -> Result<(), Error> {
         let pos = caret.get_position();
         let buffer_line_idx = pos.y as usize + self.scroll_offset;
@@ -251,6 +238,16 @@ impl View {
         Ok(())
     }
     
+    pub fn move_left(&mut self, caret: &mut Caret) -> Result<(), Error> {
+        let (new_offset, needs_render) = caret.move_left(self.scroll_offset)?;
+        self.scroll_offset = new_offset;
+        if needs_render {
+            self.render()?;
+        }
+        self.clamp_cursor_to_line(caret)?;
+        Ok(())
+    }
+    
     pub fn move_top(&mut self, caret: &mut Caret) -> Result<(), Error> {
         let (new_offset, needs_render) = caret.move_top()?;
         self.scroll_offset = new_offset;
@@ -283,6 +280,69 @@ impl View {
         caret.clamp_to_bounds()?;
         self.render()?;
         caret.move_to(caret.get_position())?;
+        Ok(())
+    }
+    
+    pub fn delete_char(&mut self, caret: &mut Caret) -> Result<(), Error> {
+        let pos = caret.get_position();
+        let buffer_line_idx = pos.y as usize + self.scroll_offset;
+        let char_pos = (pos.x as usize).saturating_sub(4);
+        
+        // Check if we're in a valid line
+        if buffer_line_idx >= self.buffer.lines.len() {
+            return Ok(());
+        }
+        
+        let line_len = self.buffer.lines[buffer_line_idx].len();
+        
+        if char_pos < line_len {
+            // Delete character at cursor
+            self.buffer.lines[buffer_line_idx].remove(char_pos);
+            self.render()?;
+            caret.move_to(pos)?;
+        } else if buffer_line_idx + 1 < self.buffer.lines.len() {
+            // At end of line, merge with next line
+            let next_line = self.buffer.lines.remove(buffer_line_idx + 1);
+            self.buffer.lines[buffer_line_idx].push_str(&next_line);
+            self.render()?;
+            caret.move_to(pos)?;
+        }
+        
+        Ok(())
+    }
+    
+    pub fn backspace(&mut self, caret: &mut Caret) -> Result<(), Error> {
+        let pos = caret.get_position();
+        let buffer_line_idx = pos.y as usize + self.scroll_offset;
+        let char_pos = (pos.x as usize).saturating_sub(4);
+        
+        if char_pos > 0 {
+            // Delete character before cursor
+            if let Some(line) = self.buffer.lines.get_mut(buffer_line_idx) {
+                if char_pos <= line.len() {
+                    line.remove(char_pos - 1);
+                    self.render()?;
+                    caret.move_to(Position { x: pos.x - 1, y: pos.y })?;
+                }
+            }
+        } else if buffer_line_idx > 0 {
+            // At start of line, merge with previous line
+            let prev_line_len = self.buffer.lines[buffer_line_idx - 1].len();
+            let current_line_content = self.buffer.lines[buffer_line_idx].clone();
+            
+            self.buffer.lines[buffer_line_idx - 1].push_str(&current_line_content);
+            self.buffer.lines.remove(buffer_line_idx);
+            
+            if pos.y > 0 {
+                self.render()?;
+                caret.move_to(Position { x: 4 + prev_line_len as u16, y: pos.y - 1 })?;
+            } else if self.scroll_offset > 0 {
+                self.scroll_offset -= 1;
+                self.render()?;
+                caret.move_to(Position { x: 4 + prev_line_len as u16, y: 0 })?;
+            }
+        }
+        
         Ok(())
     }
 }

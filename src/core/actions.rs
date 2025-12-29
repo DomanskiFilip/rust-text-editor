@@ -10,4 +10,6 @@ pub enum Action {
     NextLine,
     Quit,
     Print,
+    Backspace,
+    Delete,
 }

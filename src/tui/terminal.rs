@@ -6,7 +6,10 @@ use crate::tui::{
 use crossterm::{
     cursor::{ DisableBlinking, EnableBlinking, Hide, Show },
     queue,
-    terminal::{ Clear, ClearType, DisableLineWrap, disable_raw_mode, enable_raw_mode, size }
+    terminal::{ 
+        Clear, ClearType, DisableLineWrap, disable_raw_mode, 
+        enable_raw_mode, size, EnterAlternateScreen, LeaveAlternateScreen 
+    }
 };
 use std::io::{ stdout, Error, Write };
 
@@ -20,37 +23,27 @@ pub struct Terminal;
 
 impl Terminal {
     
-    // initialize tui
     pub fn initialize(view: &View, caret: &mut Caret) -> Result<(), Error> {
         enable_raw_mode()?;
-        queue!(stdout(), DisableLineWrap, Hide)?;
+        queue!(stdout(), EnterAlternateScreen, DisableLineWrap, Hide)?;
         Self::clear_screen()?;
         
-        // Setup Caret
         queue!(stdout(), Caret::CARET_SETTINGS.style)?;
         Caret::set_caret_color(Caret::CARET_SETTINGS.color)?;
     
-        // Render the view (buffer + margins + footer)
         view.render()?;
     
         queue!(stdout(), Show, EnableBlinking)?;
-        // Start the cursor at the "text area" (after the margin)
         caret.move_to(Position { x: 4, y: 0 })?;
         
         Self::execute()?;
         Ok(())
     }
 
-    // terminate tui
     pub fn terminate() -> Result<(), Error> {
-        // show cursor
         Caret::reset_caret_color()?;
-        queue!(stdout(), DisableBlinking, Show)?;
-        Self::execute()?;
-        // draw Godbye msg
+        queue!(stdout(), DisableBlinking, Show, LeaveAlternateScreen)?;
         disable_raw_mode()?;
-        Self::clear_screen()?;
-        queue!(stdout(), crossterm::cursor::MoveTo(0, 0))?;
         Self::execute()?;
         println!("Goodbye.");
         Ok(())
@@ -66,7 +59,6 @@ impl Terminal {
         Ok(())
     }
 
-    // The "Flush" method - sends all queued commands to the terminal
     pub fn execute() -> Result<(), Error> {
         stdout().flush()?;
         Ok(())

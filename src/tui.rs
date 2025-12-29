@@ -53,6 +53,8 @@ impl TerminalEditor {
                                 Action::MaxLeft => self.view.move_max_left(&mut self.caret)?,
                                 Action::MaxRight => self.view.move_max_right(&mut self.caret)?,
                                 Action::NextLine => self.view.insert_newline(&mut self.caret)?,
+                                Action::Backspace => self.view.backspace(&mut self.caret)?,
+                                Action::Delete => self.view.delete_char(&mut self.caret)?,
                                 Action::Quit => self.quit_program = true,
                                 Action::Print => {
                                     if let KeyCode::Char(character) = event.code {

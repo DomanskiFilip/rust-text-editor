@@ -21,10 +21,14 @@ impl Shortcuts {
             (KeyCode::PageDown, _) => Some(Action::Bottom),
             // caret most left column
             (KeyCode::Home, _) => Some(Action::MaxLeft),
-            // catet most right column
+            // caret most right column
             (KeyCode::End, _) => Some(Action::MaxRight),
             // next line
             (KeyCode::Enter, _) => Some(Action::NextLine),
+            // backspace - delete before cursor
+            (KeyCode::Backspace, _) => Some(Action::Backspace),
+            // delete - delete at cursor
+            (KeyCode::Delete, _) => Some(Action::Delete),
             // exit the program
             (KeyCode::Char('q'), KeyModifiers::CONTROL) => Some(Action::Quit),
             // print everything else
