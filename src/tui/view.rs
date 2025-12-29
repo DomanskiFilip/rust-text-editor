@@ -156,21 +156,17 @@ impl View {
     }
     
     pub fn move_up(&mut self, caret: &mut Caret) -> Result<(), Error> {
-        let (new_offset, needs_render) = caret.move_up(self.scroll_offset)?;
+        let new_offset = caret.move_up(self.scroll_offset)?;
         self.scroll_offset = new_offset;
-        if needs_render {
-            self.render()?;
-        }
+        self.render()?;
         self.clamp_cursor_to_line(caret)?;
         Ok(())
     }
     
     pub fn move_down(&mut self, caret: &mut Caret) -> Result<(), Error> {
-        let (new_offset, needs_render) = caret.move_down(self.scroll_offset, self.buffer.lines.len())?;
+        let new_offset= caret.move_down(self.scroll_offset, self.buffer.lines.len())?;
         self.scroll_offset = new_offset;
-        if needs_render {
-            self.render()?;
-        }
+        self.render()?;
         self.clamp_cursor_to_line(caret)?;
         Ok(())
     }
@@ -188,6 +184,7 @@ impl View {
                 caret.move_to(Position { x: max_x, y: pos.y })?;
             }
         }
+        caret.move_to(caret.get_position())?;
         
         Ok(())
     }
@@ -204,11 +201,9 @@ impl View {
             
             // If at end of line, move to next line
             if pos.x >= line_end && pos.x >= size.width - 1 {
-                let (new_offset, needs_render) = caret.move_right(self.scroll_offset, self.buffer.lines.len())?;
+                let new_offset = caret.move_right(self.scroll_offset, self.buffer.lines.len())?;
                 self.scroll_offset = new_offset;
-                if needs_render {
-                    self.render()?;
-                }
+                self.render()?;
                 self.clamp_cursor_to_line(caret)?;
                 return Ok(());
             }
@@ -217,11 +212,9 @@ impl View {
             if char_pos >= line.len() {
                 // Try to move to next line
                 if pos.y < size.height - 2 || self.scroll_offset + pos.y as usize + 1 < self.buffer.lines.len() {
-                    let (new_offset, needs_render) = caret.move_right(self.scroll_offset, self.buffer.lines.len())?;
+                    let new_offset = caret.move_right(self.scroll_offset, self.buffer.lines.len())?;
                     self.scroll_offset = new_offset;
-                    if needs_render {
-                        self.render()?;
-                    }
+                    self.render()?;
                     self.clamp_cursor_to_line(caret)?;
                     return Ok(());
                 }
@@ -229,31 +222,25 @@ impl View {
             }
         }
         
-        let (new_offset, needs_render) = caret.move_right(self.scroll_offset, self.buffer.lines.len())?;
+        let new_offset = caret.move_right(self.scroll_offset, self.buffer.lines.len())?;
         self.scroll_offset = new_offset;
-        if needs_render {
-            self.render()?;
-        }
+        self.render()?;
         self.clamp_cursor_to_line(caret)?;
         Ok(())
     }
     
     pub fn move_left(&mut self, caret: &mut Caret) -> Result<(), Error> {
-        let (new_offset, needs_render) = caret.move_left(self.scroll_offset)?;
+        let new_offset = caret.move_left(self.scroll_offset)?;
         self.scroll_offset = new_offset;
-        if needs_render {
-            self.render()?;
-        }
+        self.render()?;
         self.clamp_cursor_to_line(caret)?;
         Ok(())
     }
     
     pub fn move_top(&mut self, caret: &mut Caret) -> Result<(), Error> {
-        let (new_offset, needs_render) = caret.move_top()?;
+        let new_offset = caret.move_top()?;
         self.scroll_offset = new_offset;
-        if needs_render {
-            self.render()?;
-        }
+        self.render()?;
         self.clamp_cursor_to_line(caret)?;
         Ok(())
     }
