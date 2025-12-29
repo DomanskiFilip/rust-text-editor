@@ -20,6 +20,12 @@ pub struct Buffer {
 }
 
 impl View {
+    pub fn new(buffer: Buffer) -> Self {
+        Self {
+            buffer,
+            scroll_offset: 0,
+        }
+    }
     
     pub fn render(&self) -> Result<(), Error> {
         let size = Terminal::get_size()?;
@@ -373,9 +379,27 @@ impl Default for View {
     }
 }
 
+impl Buffer {
+    // handle loading a file
+    pub fn from_string(content: String) -> Self {
+        let lines: Vec<String> = content
+            .lines()
+            .map(|line| line.to_string())
+            .collect();
+        
+        // Ensure there is at least one line if the file is empty
+        if lines.is_empty() {
+            return Self { lines: vec![String::new()] };
+        }
+        
+        Self { lines }
+    }
+}
+
 impl Default for Buffer {
-     fn default() -> Self{
+    fn default() -> Self {
         let mut lines = Vec::new();
+        // generate 500 lines of Buffer
         for _ in 0..500 {
             lines.push(String::new());
         }

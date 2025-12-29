@@ -1,14 +1,16 @@
 // editor module handles the editor's state and logic
-mod view;
+pub mod view;
 mod main_error_wrapper;
 mod terminal;
 mod caret;
 
-use crate::core::actions::Action;
-use crate::core::shortcuts::Shortcuts;
+use crate::core::{
+    actions::Action,
+    shortcuts::Shortcuts
+};
 use crossterm::event::{ Event, KeyCode, KeyEventKind, read };
 use main_error_wrapper::MainErrorWrapper;
-use view::View;
+use view::{ View, Buffer };
 use terminal::Terminal;
 use caret::Caret;
 
@@ -20,8 +22,12 @@ pub struct TerminalEditor {
 
 impl TerminalEditor {
     pub fn default() -> Self {
+        Self::new(Buffer::default())
+    }
+    
+    pub fn new(buffer: Buffer) -> Self {
         Self {
-            view: View::default(),
+            view: View::new(buffer),
             caret: Caret::new(),
             quit_program: false,
         }
