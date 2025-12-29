@@ -21,10 +21,6 @@ pub struct TerminalEditor {
 }
 
 impl TerminalEditor {
-    pub fn default() -> Self {
-        Self::new(Buffer::default())
-    }
-    
     pub fn new(buffer: Buffer) -> Self {
         Self {
             view: View::new(buffer),
