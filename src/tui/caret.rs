@@ -13,9 +13,17 @@ pub struct Position {
     pub y: u16,
 }
 
+impl Position {
+    pub const MARGIN: u16 = 4; // Width of the margin
+    pub const HEADER: u16 = 1; // Height of the header
+}
+
 impl Default for Position {
     fn default() -> Self {
-        Self { x: 4, y: 0 }
+        Self { 
+            x: Self::MARGIN, 
+            y: Self::HEADER 
+        } 
     }
 }
 
@@ -76,10 +84,11 @@ impl Caret {
         let size = Terminal::get_size()?;
         let mut new_offset = scroll_offset;
         
-        if self.position.x > 4 {
+        // respect MARGIN
+        if self.position.x > Position::MARGIN {
             self.position.x -= 1;
             self.move_to(self.position)?;
-        } else if self.position.y > 0 {
+        } else if self.position.y > Position::HEADER {
             self.position.x = size.width - 1;
             self.position.y -= 1;
             self.move_to(self.position)?;
@@ -87,7 +96,6 @@ impl Caret {
             self.position.x = size.width - 1;
             new_offset -= 1;
         }
-        
         Ok(new_offset)
     }
     
@@ -116,9 +124,9 @@ impl Caret {
     pub fn move_up(&mut self, scroll_offset: usize) -> Result<usize, Error> {
         let mut new_offset = scroll_offset;
         
-        if self.position.y == 0 && scroll_offset > 0 {
+        if self.position.y == Position::HEADER && scroll_offset > 0 {
             new_offset -= 1;
-        } else if self.position.y > 0 {
+        } else if self.position.y > Position::HEADER {
             self.position.y -= 1;
             self.move_to(self.position)?;
         }
@@ -157,7 +165,7 @@ impl Caret {
     }
 
     pub fn move_max_left(&mut self) -> Result<(), Error> {
-        self.position.x = 4;
+        self.position.x = Position::MARGIN;
         self.move_to(self.position)?;
         Ok(())
     }

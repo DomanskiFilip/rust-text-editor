@@ -34,7 +34,7 @@ impl Terminal {
         view.render()?;
     
         queue!(stdout(), Show, EnableBlinking)?;
-        caret.move_to(Position { x: 4, y: 0 })?;
+        caret.move_to(Position { x: Position::MARGIN, y: Position::HEADER })?;
         
         Self::execute()?;
         Ok(())

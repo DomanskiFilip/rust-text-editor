@@ -3,9 +3,9 @@ use crate::tui::{
     caret::{ Position, Caret },
     terminal::Terminal,
 };
-use std::io::{stdout, Error };
+use std::io::{ stdout, Error };
 use crossterm::{
-    style::{Print, Color, SetForegroundColor, ResetColor},
+    style::{ Print, Color, SetForegroundColor, ResetColor, SetBackgroundColor },
     queue,
     cursor::MoveTo,
 };
@@ -23,27 +23,48 @@ impl View {
     
     pub fn render(&self) -> Result<(), Error> {
         let size = Terminal::get_size()?;
-        let visible_rows = (size.height - 1) as usize;
+        self.draw_header()?;
+    
+        // Visible rows = Total height - Header - Footer
+        let visible_rows = (size.height.saturating_sub(Position::HEADER + 1)) as usize;
         
+        // Find last line with text for dynamic margin
+        let last_non_empty_line = self.buffer.lines.iter()
+            .rposition(|line| !line.is_empty())
+            .unwrap_or(0);
+    
         for row in 0..visible_rows {
             let buffer_line_idx = row + self.scroll_offset;
-            queue!(stdout(), MoveTo(0, row as u16))?;
+            let terminal_row = row as u16 + Position::HEADER; 
+            
+            queue!(stdout(), MoveTo(0, terminal_row))?;
             Terminal::clear_rest_of_line()?;
             
-            self.draw_margin_line(row as u16, buffer_line_idx)?;
+            if buffer_line_idx <= last_non_empty_line {
+                self.draw_margin_line(terminal_row, buffer_line_idx)?;
+            }
             
             if let Some(line) = self.buffer.lines.get(buffer_line_idx) {
-                let max_width = (size.width.saturating_sub(4)) as usize;
-                let truncated_line = if line.len() > max_width {
-                    &line[..max_width]
-                } else {
-                    line
-                };
+                let max_width = (size.width.saturating_sub(Position::MARGIN)) as usize;
+                let truncated_line = if line.len() > max_width { &line[..max_width] } else { line };
                 Self::print(truncated_line)?;
             }
         }
-        
         self.draw_footer()?;
+        Ok(())
+    }
+    
+    fn draw_header(&self) -> Result<(), Error> {
+        let size = Terminal::get_size()?;
+        queue!(
+            stdout(),
+            MoveTo(0, 0),
+            SetForegroundColor(Color::DarkYellow),
+            MoveTo(size.width / 2, 0),
+            Print(" Welcome to Quick ".to_string()),
+            ResetColor
+        )?;
+        Terminal::clear_rest_of_line()?;
         Ok(())
     }
 
@@ -51,7 +72,7 @@ impl View {
         queue!(
             stdout(),
             MoveTo(0, row),
-            SetForegroundColor(Color::DarkGrey),
+            SetForegroundColor(Color::DarkYellow),
             Print(format!("{:>3} ", buffer_line_idx + 1)),
             ResetColor
         )?;
@@ -65,11 +86,12 @@ impl View {
         queue!(
             stdout(),
             MoveTo(0, footer_row),
+            SetBackgroundColor(Color::Black), 
         )?;
         Terminal::clear_rest_of_line()?;
         queue!(
             stdout(),
-            SetForegroundColor(Color::DarkGrey),
+            SetForegroundColor(Color::DarkYellow),
             Print("ctrl + q = quit |"),
             MoveTo(size.width / 2, footer_row),
             Print("© Filip Domanski"),
@@ -85,21 +107,23 @@ impl View {
     
     pub fn type_character(&mut self, character: char, caret: &mut Caret) -> Result<(), Error> {
         let size = Terminal::get_size()?;
-        let pos = caret.get_position();
+        let position = caret.get_position();
         
-        if pos.y >= size.height - 1 {
+        if position.y >= size.height - 1 {
             return Ok(());
         }
         
-        let buffer_line_idx = pos.y as usize + self.scroll_offset;
+        // Adjust Y coordinate to Buffer Index
+        let buffer_line_idx = (position.y.saturating_sub(Position::HEADER)) as usize + self.scroll_offset;
 
         while self.buffer.lines.len() <= buffer_line_idx {
             self.buffer.lines.push(String::new());
         }
 
-        let char_pos = (pos.x as usize).saturating_sub(4);
+        // Adjust X coordinate to Character Index
+        let char_pos = (position.x as usize).saturating_sub(Position::MARGIN as usize);
         
-        if pos.x >= size.width - 1 {
+        if position.x >= size.width - 1 {
             self.insert_newline(caret)?;
             return self.type_character(character, caret);
         }
@@ -113,9 +137,9 @@ impl View {
 
         self.render()?;
         
-        if pos.x + 1 < size.width - 1 {
-            caret.move_to(Position { x: pos.x + 1, y: pos.y })?;
-        } else if pos.y < size.height - 2 {
+        if position.x + 1 < size.width - 1 {
+            caret.move_to(Position { x: position.x + 1, y: position.y })?;
+        } else if position.y < size.height - 2 {
             caret.next_line()?;
         }
         
@@ -124,14 +148,14 @@ impl View {
     
     pub fn insert_newline(&mut self, caret: &mut Caret) -> Result<(), Error> {
         let size = Terminal::get_size()?;
-        let pos = caret.get_position();
+        let position = caret.get_position();
         
-        if pos.y >= size.height - 1 {
+        if position.y >= size.height - 1 {
             return Ok(());
         }
         
-        let buffer_line_idx = pos.y as usize + self.scroll_offset;
-        let char_pos = (pos.x as usize).saturating_sub(4);
+        let buffer_line_idx = position.y as usize + self.scroll_offset;
+        let char_pos = (position.x as usize).saturating_sub(4);
 
         while self.buffer.lines.len() <= buffer_line_idx {
             self.buffer.lines.push(String::new());
@@ -146,7 +170,7 @@ impl View {
         
         self.buffer.lines.insert(buffer_line_idx + 1, new_line_content);
 
-        if pos.y >= size.height - 2 {
+        if position.y >= size.height - 2 {
             self.scroll_offset += 1;
         }
         
@@ -300,36 +324,42 @@ impl View {
     
     pub fn backspace(&mut self, caret: &mut Caret) -> Result<(), Error> {
         let pos = caret.get_position();
-        let buffer_line_idx = pos.y as usize + self.scroll_offset;
-        let char_pos = (pos.x as usize).saturating_sub(4);
+        // Use constants for index calculation
+        let buffer_line_idx = (pos.y.saturating_sub(Position::HEADER)) as usize + self.scroll_offset;
+        let char_pos = (pos.x as usize).saturating_sub(Position::MARGIN as usize);
         
         if char_pos > 0 {
-            // Delete character before cursor
             if let Some(line) = self.buffer.lines.get_mut(buffer_line_idx) {
                 if char_pos <= line.len() {
                     line.remove(char_pos - 1);
-                    self.render()?;
+                    self.render()?; // Pass caret to sync cursor
                     caret.move_to(Position { x: pos.x - 1, y: pos.y })?;
                 }
             }
         } else if buffer_line_idx > 0 {
-            // At start of line, merge with previous line
+            // Line merging logic
             let prev_line_len = self.buffer.lines[buffer_line_idx - 1].len();
             let current_line_content = self.buffer.lines[buffer_line_idx].clone();
             
             self.buffer.lines[buffer_line_idx - 1].push_str(&current_line_content);
             self.buffer.lines.remove(buffer_line_idx);
             
-            if pos.y > 0 {
+            // Prevent moving into Header during backspace
+            if pos.y > Position::HEADER {
                 self.render()?;
-                caret.move_to(Position { x: 4 + prev_line_len as u16, y: pos.y - 1 })?;
+                caret.move_to(Position { 
+                    x: Position::MARGIN + prev_line_len as u16, 
+                    y: pos.y - 1 
+                })?;
             } else if self.scroll_offset > 0 {
                 self.scroll_offset -= 1;
                 self.render()?;
-                caret.move_to(Position { x: 4 + prev_line_len as u16, y: 0 })?;
+                caret.move_to(Position { 
+                    x: Position::MARGIN + prev_line_len as u16, 
+                    y: Position::HEADER 
+                })?;
             }
         }
-        
         Ok(())
     }
 }
