@@ -1,16 +1,19 @@
-use crate::tui::view::View;
-use crate::tui::caret::Caret;
+// terminal module responsible for terminal manipulation and information
+use crate::tui::{
+    view::View,
+    caret::{ Position, Caret },
+};
 use crossterm::{
     cursor::{ DisableBlinking, EnableBlinking, Hide, Show },
     queue,
-    terminal::{ Clear, ClearType, DisableLineWrap, disable_raw_mode, enable_raw_mode }
+    terminal::{ Clear, ClearType, DisableLineWrap, disable_raw_mode, enable_raw_mode, size }
 };
 use std::io::{ stdout, Error, Write };
 
 #[derive(Copy, Clone)]
-pub struct Position {
-    pub x: u16,
-    pub y: u16,
+pub struct Size {
+    pub height: u16,
+    pub width: u16,
 }
 
 pub struct Terminal;
@@ -18,19 +21,22 @@ pub struct Terminal;
 impl Terminal {
     
     // initialize tui
-    pub fn initialize() -> Result<(), Error> {
+    pub fn initialize(view: &View) -> Result<(), Error> {
         enable_raw_mode()?;
-        // Queue all initial setup commands
         queue!(stdout(), DisableLineWrap, Hide)?;
         Self::clear_screen()?;
-        // set cursor color
+        
+        // Setup Caret
         queue!(stdout(), Caret::CARET_SETTINGS.style)?;
         Caret::set_caret_color(Caret::CARET_SETTINGS.color)?;
-        View::draw_margin()?;
-        View::draw_footer()?;
+    
+        // Render the view (buffer + margins + footer)
+        view.render()?;
+    
         queue!(stdout(), Show, EnableBlinking)?;
+        // Start the cursor at the "text area" (after the margin)
         Caret::move_caret_to(Position { x: 4, y: 0 })?;
-        // Single flush to render everything at once
+        
         Self::execute()?;
         Ok(())
     }
@@ -54,10 +60,20 @@ impl Terminal {
         queue!(stdout(), Clear(ClearType::All))?;
         Ok(())
     }
+    
+    pub fn clear_rest_of_line() -> Result<(), Error> {
+        queue!(stdout(), Clear(ClearType::UntilNewLine))?;
+        Ok(())
+    }
 
     // The "Flush" method - sends all queued commands to the terminal
     pub fn execute() -> Result<(), Error> {
         stdout().flush()?;
         Ok(())
+    }
+    
+    pub fn get_size() -> Result<Size, Error> {
+        let (width, height) = size()?;
+        Ok(Size { width, height })
     }
 }

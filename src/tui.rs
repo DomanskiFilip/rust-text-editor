@@ -17,19 +17,21 @@ use caret::Caret;
 
 
 pub struct TerminalEditor {
+    view: View,
     quit_program: bool,
 }
 
 impl TerminalEditor {
     pub fn default() -> Self {
         Self {
+            view: View::default(),
             quit_program: false,
         }
     }
     
     pub fn run(&mut self) {
         // initialise tui
-        if let Err(error) = Terminal::initialize() {
+        if let Err(error) = Terminal::initialize(&self.view) {
             eprintln!("Terminal Initialisation Failed: {:?}", error); 
         }
         // runs main program loop with error wrapper
@@ -57,20 +59,12 @@ impl TerminalEditor {
                             Action::Bottom => Caret::move_bottom()?,
                             Action::MaxLeft => Caret::move_max_left()?,
                             Action::MaxRight => Caret::move_max_right()?,
-                            Action::NextLine => Caret::next_line()?,
+                            Action::NextLine => self.view.insert_newline()?,
                             Action::Quit => self.quit_program = true,
                             Action::Print => {
                                 if let KeyCode::Char(character) = event.code {
-                                    let (x, _) = position()?;
-                                    let size = View::get_size()?;
-                            
-                                    // Check if we are at the very last column
-                                    if x >= size.width - 1 {
-                                        // Move to the next line
-                                        Caret::next_line()?
-                                    }
-                                    
-                                    View::print_character(&character.to_string())?;
+                                    // type/print character into buffer
+                                    self.view.type_character(character)?;
                                 }
                             }
                         }

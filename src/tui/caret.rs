@@ -1,11 +1,23 @@
-use crate::tui::view::View;
-use crate::tui::terminal::Position;
+// caret module responsible for caret manipulation and settings
+use crate::tui::terminal::Terminal;
 use crossterm::{
     cursor::{ position, SetCursorStyle, MoveTo },
     style::Print,
     queue,
 };
 use std::io::{ stdout, Error, Write };
+
+#[derive(Copy, Clone)]
+pub struct Position {
+    pub x: u16,
+    pub y: u16,
+}
+
+impl Default for Position {
+    fn default() -> Self {
+        Self { x: 4, y: 0 }
+    }
+}
 
 pub struct Caret {
     pub color: &'static str,
@@ -38,7 +50,7 @@ impl Caret {
     
     pub fn next_line() -> Result<(), Error> {
         let (_, y) = position()?;
-        let size = View::get_size()?; 
+        let size = Terminal::get_size()?; 
         Caret::move_caret_to(Position { x: 4, y: y + 1 })?;
         if y + 1 == size.height - 1 {
             Caret::move_caret_to(Position { x: 4, y: y })?;
@@ -49,7 +61,7 @@ impl Caret {
 
     pub fn move_left() -> Result<(), Error> {
         let (x, y) = position()?;
-        let size = View::get_size()?;
+        let size = Terminal::get_size()?;
     
         if x > 4 {
             Caret::move_caret_to(Position { x: x - 1, y: y })?;
@@ -61,7 +73,7 @@ impl Caret {
     
     pub fn move_right() -> Result<(), Error> {
         let (x, y) = position()?;
-        let size = View::get_size()?; 
+        let size = Terminal::get_size()?; 
     
         if x < size.width - 1 {
             Caret::move_caret_to(Position { x: x + 1, y: y })?;
@@ -81,7 +93,7 @@ impl Caret {
 
     pub fn move_down() -> Result<(), Error> {
         let (x, y) = position()?;
-        let size = View::get_size()?; 
+        let size = Terminal::get_size()?; 
         if y < size.height - 2 { 
             Caret::move_caret_to(Position { x, y: y + 1 })?;
         }
@@ -96,7 +108,7 @@ impl Caret {
 
     pub fn move_bottom() -> Result<(), Error> {
         let (x, _) = position()?;
-        let size = View::get_size()?;
+        let size = Terminal::get_size()?;
         Caret::move_caret_to(Position { x, y: size.height - 2 })?;
         Ok(())
     }
@@ -109,7 +121,7 @@ impl Caret {
 
     pub fn move_max_right() -> Result<(), Error> {
         let (_, y) = position()?;
-        let size = View::get_size()?;
+        let size = Terminal::get_size()?;
         Caret::move_caret_to(Position { x: size.width - 1, y })?;
         Ok(())
     }
