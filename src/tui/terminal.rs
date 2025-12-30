@@ -32,7 +32,6 @@ impl Terminal {
         Caret::set_caret_color(Caret::CARET_SETTINGS.color)?;
     
         view.render()?;
-    
         queue!(stdout(), Show, EnableBlinking)?;
         caret.move_to(Position { x: Position::MARGIN, y: Position::HEADER })?;
         

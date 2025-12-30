@@ -12,4 +12,7 @@ pub enum Action {
     Print,
     Backspace,
     Delete,
+    Save,
+    New,
+    ToggleCtrlShortcuts,
 }

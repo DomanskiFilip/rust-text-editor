@@ -5,7 +5,7 @@ use crate::tui::{
 };
 use std::io::{ stdout, Error };
 use crossterm::{
-    style::{ Print, Color, SetForegroundColor, ResetColor, SetBackgroundColor },
+    style::{ Print, Color, SetForegroundColor, ResetColor, SetBackgroundColor, SetAttribute, Attribute },
     queue,
     cursor::MoveTo,
 };
@@ -13,6 +13,8 @@ use crossterm::{
 pub struct View {
     buffer: Buffer,
     scroll_offset: usize,
+    filename: Option<String>,
+    show_shortcuts: bool,
 }
 
 pub struct Buffer {
@@ -24,10 +26,21 @@ impl View {
         Self {
             buffer,
             scroll_offset: 0,
+            filename: None,
+            show_shortcuts: false,
         }
     }
     
+    pub fn set_filename(&mut self, filename: String) {
+        self.filename = Some(filename);
+    }
+    
+    pub fn toggle_ctrl_shortcuts(&mut self) {
+        self.show_shortcuts = !self.show_shortcuts;
+    }
+    
     pub fn render(&self) -> Result<(), Error> {
+        let (cur_x, cur_y) = crossterm::cursor::position()?;
         let size = Terminal::get_size()?;
         self.draw_header()?;
     
@@ -57,6 +70,9 @@ impl View {
             }
         }
         self.draw_footer()?;
+        
+        // Restore cursor position
+        queue!(stdout(), MoveTo(cur_x, cur_y))?;
         Ok(())
     }
     
@@ -89,20 +105,152 @@ impl View {
         let size = Terminal::get_size()?;
         let footer_row = size.height - 1;
         
+        // Clear the footer line and set background
         queue!(
             stdout(),
             MoveTo(0, footer_row),
-            SetBackgroundColor(Color::Black), 
+            SetBackgroundColor(Color::Black),
         )?;
         Terminal::clear_rest_of_line()?;
+        
+        // Move back to start of footer
+        queue!(stdout(), MoveTo(0, footer_row))?;
+        
+        if self.show_shortcuts {
+            // Show shortcuts when Ctrl is held
+            self.draw_shortcuts_footer()?;
+        } else {
+            // Show normal footer with file info and stats
+            self.draw_info_footer()?;
+        }
+        
+        queue!(stdout(), ResetColor)?;
+        Ok(())
+    }
+    
+    fn draw_info_footer(&self) -> Result<(), Error> {
+        use crossterm::cursor::position;
+        
+        let size = Terminal::get_size()?;
+        let footer_row = size.height - 1;
+        let (cur_x, cur_y) = position()?;
+        
+        // Left side: Filename or [No Name]
+        queue!(stdout(), MoveTo(1, footer_row))?;
+        let filename_display = self.filename.as_deref().unwrap_or("[No Name]");
         queue!(
             stdout(),
-            SetForegroundColor(Color::DarkYellow),
-            Print("ctrl + q = quit |"),
-            MoveTo(size.width / 2, footer_row),
-            Print("© Filip Domanski"),
-            ResetColor,
+            SetBackgroundColor(Color::Black),
+            SetForegroundColor(Color::Yellow),
+            SetAttribute(Attribute::Bold),
+            Print(format!(" {} ", filename_display)),
+            SetAttribute(Attribute::Reset),
         )?;
+        
+        // Calculate stats - find last non-empty line for accurate count
+        let total_lines = self.buffer.lines.iter()
+            .rposition(|line| !line.is_empty())
+            .map(|idx| idx + 1)
+            .unwrap_or(1);
+        let total_chars: usize = self.buffer.lines.iter()
+            .take(total_lines)
+            .map(|line| line.len())
+            .sum();
+        
+        // Current position (adjust for margin)
+        let line_num = cur_y.saturating_sub(Position::HEADER) + 1 + self.scroll_offset as u16;
+        let col_num = cur_x.saturating_sub(Position::MARGIN - 1);
+        
+        // Middle-left: Stats
+        let stats = format!(" Ln {}, Col {} ", line_num, col_num);
+        queue!(
+            stdout(),
+            SetForegroundColor(Color::White),
+            Print(stats),
+        )?;
+        
+        // Middle: Lines and Characters count
+        let counts = format!("Lines: {} | Chars: {} ", total_lines, total_chars);
+        let counts_width = counts.len() as u16;
+        let middle_pos = (size.width / 2).saturating_sub(counts_width / 2);
+        queue!(
+            stdout(),
+            MoveTo(middle_pos, footer_row),
+            SetBackgroundColor(Color::Black),
+            SetForegroundColor(Color::White),
+            Print(counts),
+        )?;
+        
+        // Right side: Help hint
+        let hint = " Press Ctrl + g for shortcuts ";
+        let hint_width = hint.len() as u16;
+        let hint_pos = size.width.saturating_sub(hint_width + 1);
+        queue!(
+            stdout(),
+            MoveTo(hint_pos, footer_row),
+            SetForegroundColor(Color::DarkYellow),
+            SetAttribute(Attribute::Italic),
+            Print(hint),
+            SetAttribute(Attribute::Reset),
+        )?;
+        
+        Ok(())
+    }
+    
+    fn draw_shortcuts_footer(&self) -> Result<(), Error> {
+        use crate::core::shortcuts::Shortcuts;
+        
+        let size = Terminal::get_size()?;
+        let footer_row = size.height - 1;
+        
+        queue!(
+            stdout(),
+            MoveTo(1, footer_row),
+            SetBackgroundColor(Color::Black),
+        )?;
+        
+        // Get shortcuts from Shortcuts module
+        let shortcuts = Shortcuts::get_ctrl_shortcuts();
+        
+        let mut current_x = 1;
+        for (i, (key, desc)) in shortcuts.iter().enumerate() {
+            // Check if we have space
+            let entry_width = key.len() + desc.len() + 4;
+            if current_x + entry_width as u16 > size.width - 2 {
+                break;
+            }
+            
+            // Draw key in bold yellow
+            queue!(
+                stdout(),
+                MoveTo(current_x, footer_row),
+                SetForegroundColor(Color::DarkYellow),
+                SetAttribute(Attribute::Bold),
+                Print(format!("{}", key)),
+                SetAttribute(Attribute::Reset),
+            )?;
+            current_x += key.len() as u16;
+            
+            // Draw description
+            queue!(
+                stdout(),
+                MoveTo(current_x, footer_row),
+                SetForegroundColor(Color::White),
+                Print(format!(" {} ", desc)),
+            )?;
+            current_x += desc.len() as u16 + 1;
+            
+            // Add separator except for last item
+            if i < shortcuts.len() - 1 {
+                queue!(
+                    stdout(),
+                    SetForegroundColor(Color::DarkGrey),
+                    Print("│ "),
+                )?;
+                current_x += 2;
+            }
+        }
+        
         Ok(())
     }
 
@@ -156,18 +304,20 @@ impl View {
         let size = Terminal::get_size()?;
         let position = caret.get_position();
         
-        // Don't insert newline in footer
-        if position.y >= size.height - 2 {
+        // Prevent typing in the absolute last row of the terminal (footer)
+        if position.y >= size.height - 1 {
             return Ok(());
         }
         
         let buffer_line_idx = (position.y.saturating_sub(Position::HEADER)) as usize + self.scroll_offset;
         let char_pos = (position.x as usize).saturating_sub(Position::MARGIN as usize);
-
+    
+        // Ensure buffer is large enough
         while self.buffer.lines.len() <= buffer_line_idx {
             self.buffer.lines.push(String::new());
         }
         
+        // Split the current line
         let current_line = &mut self.buffer.lines[buffer_line_idx];
         let new_line_content = if char_pos < current_line.len() {
             current_line.split_off(char_pos)
@@ -175,13 +325,16 @@ impl View {
             String::new()
         };
         
+        // Insert the new line into the buffer
         self.buffer.lines.insert(buffer_line_idx + 1, new_line_content);
-
-        // If at bottom of visible area, scroll down
-        if position.y >= size.height - 2 {
-            self.scroll_offset += 1;
-        }
         
+        // Update the view (must render before moving caret so terminal state matches)
+        self.render()?;
+        
+        // This will handle incrementing scroll_offset if the cursor is at the bottom of the visible area
+        self.scroll_offset = caret.move_down(self.scroll_offset, self.buffer.lines.len())?;
+        
+        // Final render to place cursor correctly
         self.render()?;
         caret.next_line()?;
         Ok(())
@@ -432,6 +585,8 @@ impl Default for View {
         Self {
             buffer: Buffer::default(),
             scroll_offset: 0,
+            filename: None,
+            show_shortcuts: false,
         }
     }
 }
@@ -439,14 +594,19 @@ impl Default for View {
 impl Buffer {
     // handle loading a file
     pub fn from_string(content: String) -> Self {
-        let lines: Vec<String> = content
+        let mut lines: Vec<String> = content
             .lines()
             .map(|line| line.to_string())
             .collect();
         
         // Ensure there is at least one line if the file is empty
         if lines.is_empty() {
-            return Self { lines: vec![String::new()] };
+            lines.push(String::new());
+        }
+        
+        // Add buffer space for expansion (500 empty lines after content)
+        for _ in 0..500 {
+            lines.push(String::new());
         }
         
         Self { lines }

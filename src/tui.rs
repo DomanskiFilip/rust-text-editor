@@ -8,8 +8,7 @@ use crate::core::{
     actions::Action,
     shortcuts::Shortcuts
 };
-use crossterm::event::{ Event, KeyCode, KeyEventKind, KeyModifiers, poll, read };
-use std::time::Duration;
+use crossterm::event::{ Event, KeyCode, KeyEventKind, read };
 use main_error_wrapper::MainErrorWrapper;
 use view::{ View, Buffer };
 use terminal::Terminal;
@@ -45,24 +44,10 @@ impl TerminalEditor {
     }
     
     fn main_loop(&mut self) -> Result<(), std::io::Error> {
-        let mut last_ctrl_state = false;
         
         loop {
-            // Poll with short timeout to allow responsive UI updates
-            if poll(Duration::from_millis(50))? {
                 match read()? {
-                    Event::Key(event) => {
-                        // Check current Ctrl state
-                        let ctrl_pressed = event.modifiers.contains(KeyModifiers::CONTROL);
-                        
-                        // Update footer if Ctrl state changed
-                        if ctrl_pressed != last_ctrl_state {
-                            last_ctrl_state = ctrl_pressed;
-                            self.view.set_show_shortcuts(ctrl_pressed);
-                            self.view.render()?;
-                            Terminal::execute()?;
-                        }
-                        
+                    Event::Key(event) => {                        
                         if event.kind == KeyEventKind::Press {
                             if let Some(action) = Shortcuts::resolve(&event) {
                                 match action {
@@ -77,6 +62,10 @@ impl TerminalEditor {
                                     Action::NextLine => self.view.insert_newline(&mut self.caret)?,
                                     Action::Backspace => self.view.backspace(&mut self.caret)?,
                                     Action::Delete => self.view.delete_char(&mut self.caret)?,
+                                    Action::ToggleCtrlShortcuts => {
+                                        self.view.toggle_ctrl_shortcuts();
+                                        self.view.render()?;
+                                    },
                                     Action::Save => {
                                         // TODO: Implement save
                                     },
@@ -97,16 +86,6 @@ impl TerminalEditor {
                     Event::Resize(_, _) => self.view.handle_resize(&mut self.caret)?,
                     _ => {}
                 }
-            } else {
-                // Timeout - check if we need to hide shortcuts (Ctrl was released between events)
-                if last_ctrl_state {
-                    last_ctrl_state = false;
-                    self.view.set_show_shortcuts(false);
-                    self.view.render()?;
-                    Terminal::execute()?;
-                }
-            }
-            
             if self.quit_program { break; }
         }
         Ok(())
