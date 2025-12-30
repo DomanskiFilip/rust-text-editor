@@ -115,6 +115,7 @@ impl View {
         let size = Terminal::get_size()?;
         let position = caret.get_position();
         
+        // Don't allow typing in footer
         if position.y >= size.height - 1 {
             return Ok(());
         }
@@ -129,6 +130,7 @@ impl View {
         // Adjust X coordinate to Character Index
         let char_pos = (position.x as usize).saturating_sub(Position::MARGIN as usize);
         
+        // If at end of screen width, wrap to next line
         if position.x >= size.width - 1 {
             self.insert_newline(caret)?;
             return self.type_character(character, caret);
@@ -143,11 +145,9 @@ impl View {
 
         self.render()?;
         
-        if position.x + 1 < size.width - 1 {
-            caret.move_to(Position { x: position.x + 1, y: position.y })?;
-        } else if position.y < size.height - 2 {
-            caret.next_line()?;
-        }
+        // Use caret's move_right to handle cursor movement
+        let new_offset = caret.move_right(self.scroll_offset, self.buffer.lines.len())?;
+        self.scroll_offset = new_offset;
         
         Ok(())
     }
@@ -156,12 +156,13 @@ impl View {
         let size = Terminal::get_size()?;
         let position = caret.get_position();
         
-        if position.y >= size.height - 1 {
+        // Don't insert newline in footer
+        if position.y >= size.height - 2 {
             return Ok(());
         }
         
-        let buffer_line_idx = position.y as usize + self.scroll_offset;
-        let char_pos = (position.x as usize).saturating_sub(4);
+        let buffer_line_idx = (position.y.saturating_sub(Position::HEADER)) as usize + self.scroll_offset;
+        let char_pos = (position.x as usize).saturating_sub(Position::MARGIN as usize);
 
         while self.buffer.lines.len() <= buffer_line_idx {
             self.buffer.lines.push(String::new());
@@ -176,6 +177,7 @@ impl View {
         
         self.buffer.lines.insert(buffer_line_idx + 1, new_line_content);
 
+        // If at bottom of visible area, scroll down
         if position.y >= size.height - 2 {
             self.scroll_offset += 1;
         }
@@ -194,7 +196,7 @@ impl View {
     }
     
     pub fn move_down(&mut self, caret: &mut Caret) -> Result<(), Error> {
-        let new_offset= caret.move_down(self.scroll_offset, self.buffer.lines.len())?;
+        let new_offset = caret.move_down(self.scroll_offset, self.buffer.lines.len())?;
         self.scroll_offset = new_offset;
         self.render()?;
         self.clamp_cursor_to_line(caret)?;
@@ -203,67 +205,90 @@ impl View {
     
     fn clamp_cursor_to_line(&self, caret: &mut Caret) -> Result<(), Error> {
         let pos = caret.get_position();
-        let buffer_line_idx = pos.y as usize + self.scroll_offset;
+        let buffer_line_idx = (pos.y.saturating_sub(Position::HEADER)) as usize + self.scroll_offset;
         
         if let Some(line) = self.buffer.lines.get(buffer_line_idx) {
-            let line_end = 4 + line.len() as u16;
+            let line_end = Position::MARGIN + line.len() as u16;
             let size = Terminal::get_size()?;
             let max_x = line_end.min(size.width - 1);
             
             if pos.x > max_x {
                 caret.move_to(Position { x: max_x, y: pos.y })?;
+            } else {
+                caret.move_to(pos)?;
             }
+        } else {
+            caret.move_to(pos)?;
         }
-        caret.move_to(caret.get_position())?;
         
         Ok(())
     }
     
     pub fn move_right(&mut self, caret: &mut Caret) -> Result<(), Error> {
         let pos = caret.get_position();
-        let buffer_line_idx = pos.y as usize + self.scroll_offset;
+        let buffer_line_idx = (pos.y.saturating_sub(Position::HEADER)) as usize + self.scroll_offset;
         
         // Check if we can move right on current line
         if let Some(line) = self.buffer.lines.get(buffer_line_idx) {
-            let char_pos = (pos.x as usize).saturating_sub(4);
+            let char_pos = (pos.x as usize).saturating_sub(Position::MARGIN as usize);
+            let line_end = Position::MARGIN + line.len() as u16;
             let size = Terminal::get_size()?;
-            let line_end = 4 + line.len() as u16;
             
-            // If at end of line, move to next line
-            if pos.x >= line_end && pos.x >= size.width - 1 {
+            // If we're within the line content, use caret's move_right
+            if pos.x < line_end && pos.x < size.width - 1 {
                 let new_offset = caret.move_right(self.scroll_offset, self.buffer.lines.len())?;
                 self.scroll_offset = new_offset;
-                self.render()?;
-                self.clamp_cursor_to_line(caret)?;
                 return Ok(());
             }
             
-            // If at end of line content but not screen edge
-            if char_pos >= line.len() {
-                // Try to move to next line
-                if pos.y < size.height - 2 || self.scroll_offset + pos.y as usize + 1 < self.buffer.lines.len() {
-                    let new_offset = caret.move_right(self.scroll_offset, self.buffer.lines.len())?;
-                    self.scroll_offset = new_offset;
+            // If at end of line content, try to move to next line
+            if char_pos >= line.len() && buffer_line_idx + 1 < self.buffer.lines.len() {
+                if pos.y < size.height - 2 {
+                    // Move to start of next line
+                    caret.move_to(Position { x: Position::MARGIN, y: pos.y + 1 })?;
+                } else {
+                    // Scroll down and stay at same y position
+                    self.scroll_offset += 1;
                     self.render()?;
-                    self.clamp_cursor_to_line(caret)?;
-                    return Ok(());
+                    caret.move_to(Position { x: Position::MARGIN, y: pos.y })?;
                 }
-                return Ok(()); // Can't move further
             }
         }
         
-        let new_offset = caret.move_right(self.scroll_offset, self.buffer.lines.len())?;
-        self.scroll_offset = new_offset;
-        self.render()?;
-        self.clamp_cursor_to_line(caret)?;
         Ok(())
     }
     
     pub fn move_left(&mut self, caret: &mut Caret) -> Result<(), Error> {
-        let new_offset = caret.move_left(self.scroll_offset)?;
-        self.scroll_offset = new_offset;
-        self.render()?;
-        self.clamp_cursor_to_line(caret)?;
+        let pos = caret.get_position();
+        let buffer_line_idx = (pos.y.saturating_sub(Position::HEADER)) as usize + self.scroll_offset;
+        
+        // If at beginning of line content, try to move to end of previous line
+        if pos.x <= Position::MARGIN && buffer_line_idx > 0 {
+            let prev_line_len = self.buffer.lines.get(buffer_line_idx - 1)
+                .map(|l| l.len())
+                .unwrap_or(0);
+            
+            if pos.y > Position::HEADER {
+                // Move to end of previous line
+                caret.move_to(Position { 
+                    x: Position::MARGIN + prev_line_len as u16, 
+                    y: pos.y - 1 
+                })?;
+            } else if self.scroll_offset > 0 {
+                // Scroll up
+                self.scroll_offset -= 1;
+                self.render()?;
+                caret.move_to(Position { 
+                    x: Position::MARGIN + prev_line_len as u16, 
+                    y: Position::HEADER 
+                })?;
+            }
+        } else {
+            // Normal left movement using caret
+            let new_offset = caret.move_left(self.scroll_offset)?;
+            self.scroll_offset = new_offset;
+        }
+        
         Ok(())
     }
     
@@ -271,25 +296,55 @@ impl View {
         let new_offset = caret.move_top()?;
         self.scroll_offset = new_offset;
         self.render()?;
-        self.clamp_cursor_to_line(caret)?;
+        caret.move_to(Position { x: Position::MARGIN, y: Position::HEADER })?;
         Ok(())
     }
     
     pub fn move_bottom(&mut self, caret: &mut Caret) -> Result<(), Error> {
+        let size = Terminal::get_size()?;
+        let visible_rows = (size.height.saturating_sub(Position::HEADER + 1)) as usize;
+        
+        // Find last non-empty line
+        let last_line = self.buffer.lines.iter()
+            .rposition(|line| !line.is_empty())
+            .unwrap_or(0);
+        
+        // Calculate scroll offset to show last line
+        if last_line >= visible_rows {
+            self.scroll_offset = last_line - visible_rows + 1;
+        } else {
+            self.scroll_offset = 0;
+        }
+        
+        self.render()?;
+        
+        // Use caret's move_bottom to position at bottom of visible area
         caret.move_bottom()?;
+        
+        // Then clamp to actual line length
         self.clamp_cursor_to_line(caret)?;
         Ok(())
     }
     
     pub fn move_max_left(&mut self, caret: &mut Caret) -> Result<(), Error> {
         caret.move_max_left()?;
-        self.clamp_cursor_to_line(caret)?;
         Ok(())
     }
     
     pub fn move_max_right(&mut self, caret: &mut Caret) -> Result<(), Error> {
-        caret.move_max_right()?;
-        self.clamp_cursor_to_line(caret)?;
+        let pos = caret.get_position();
+        let buffer_line_idx = (pos.y.saturating_sub(Position::HEADER)) as usize + self.scroll_offset;
+        
+        // Get the actual line length to determine proper max right position
+        if let Some(line) = self.buffer.lines.get(buffer_line_idx) {
+            let size = Terminal::get_size()?;
+            let line_end = Position::MARGIN + line.len() as u16;
+            let max_x = line_end.min(size.width - 1);
+            caret.move_to(Position { x: max_x, y: pos.y })?;
+        } else {
+            // If no line content, just use caret's move_max_right
+            caret.move_max_right()?;
+        }
         Ok(())
     }
     
@@ -302,8 +357,8 @@ impl View {
     
     pub fn delete_char(&mut self, caret: &mut Caret) -> Result<(), Error> {
         let pos = caret.get_position();
-        let buffer_line_idx = pos.y as usize + self.scroll_offset;
-        let char_pos = (pos.x as usize).saturating_sub(4);
+        let buffer_line_idx = (pos.y.saturating_sub(Position::HEADER)) as usize + self.scroll_offset;
+        let char_pos = (pos.x as usize).saturating_sub(Position::MARGIN as usize);
         
         // Check if we're in a valid line
         if buffer_line_idx >= self.buffer.lines.len() {
@@ -330,27 +385,29 @@ impl View {
     
     pub fn backspace(&mut self, caret: &mut Caret) -> Result<(), Error> {
         let pos = caret.get_position();
-        // Use constants for index calculation
         let buffer_line_idx = (pos.y.saturating_sub(Position::HEADER)) as usize + self.scroll_offset;
         let char_pos = (pos.x as usize).saturating_sub(Position::MARGIN as usize);
         
         if char_pos > 0 {
+            // Delete character before cursor
             if let Some(line) = self.buffer.lines.get_mut(buffer_line_idx) {
                 if char_pos <= line.len() {
                     line.remove(char_pos - 1);
-                    self.render()?; // Pass caret to sync cursor
-                    caret.move_to(Position { x: pos.x - 1, y: pos.y })?;
+                    self.render()?;
+                    // Use caret's move_left
+                    let new_offset = caret.move_left(self.scroll_offset)?;
+                    self.scroll_offset = new_offset;
                 }
             }
         } else if buffer_line_idx > 0 {
-            // Line merging logic
+            // At beginning of line, merge with previous line
             let prev_line_len = self.buffer.lines[buffer_line_idx - 1].len();
             let current_line_content = self.buffer.lines[buffer_line_idx].clone();
             
             self.buffer.lines[buffer_line_idx - 1].push_str(&current_line_content);
             self.buffer.lines.remove(buffer_line_idx);
             
-            // Prevent moving into Header during backspace
+            // Move cursor to end of previous line
             if pos.y > Position::HEADER {
                 self.render()?;
                 caret.move_to(Position { 

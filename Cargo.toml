@@ -1,7 +1,20 @@
 [package]
 name = "quick"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+authors = ["Filip Domanski"]
+description = "A terminal text editor written in Rust - beta"
+repository = "https://github.com/DomanskiFilip/quick_notepad"
+
+[[bin]]
+name = "quick"
+path = "src/main.rs"
 
 [dependencies]
 crossterm = "0.29.0"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
