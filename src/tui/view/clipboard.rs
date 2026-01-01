@@ -1,6 +1,8 @@
 // clipboard module responsible for clipboard operations
 use super::View;
 use crate::tui::caret::{Caret, Position};
+use crate::tui::terminal::Terminal;
+use crate::core::selection::TextPosition;
 use std::io::Error;
 
 pub fn copy_selection(view: &View) -> Result<(), Error> {
@@ -69,7 +71,7 @@ pub fn delete_selection(view: &mut View, caret: &mut Caret) -> Result<(), Error>
 }
 
 // Helper: Extract text from selection range
-fn extract_text(view: &View, start: crate::core::selection::TextPosition, end: crate::core::selection::TextPosition) -> String {
+fn extract_text(view: &View, start: TextPosition, end: TextPosition) -> String {
     let mut result = String::new();
     
     if start.line == end.line {
@@ -109,7 +111,7 @@ fn extract_text(view: &View, start: crate::core::selection::TextPosition, end: c
 }
 
 // Helper: Delete text in range
-fn delete_range(view: &mut View, start: crate::core::selection::TextPosition, end: crate::core::selection::TextPosition) -> Result<(), Error> {
+fn delete_range(view: &mut View, start: TextPosition, end: TextPosition) -> Result<(), Error> {
     if start.line == end.line {
         // Single line deletion
         if let Some(line) = view.buffer.lines.get_mut(start.line) {
@@ -166,59 +168,90 @@ fn insert_text_at_cursor(view: &mut View, caret: &mut Caret, text: &str) -> Resu
     
     // Check if text contains newlines
     if text.contains('\n') {
-        // Multi-line paste
-        let lines: Vec<&str> = text.lines().collect();
+        // Multi-line paste - use split to preserve empty lines
+        let lines: Vec<&str> = text.split('\n').collect();
         
         if lines.is_empty() {
             return Ok(());
         }
         
         // Split current line at cursor
-        let current_line = &view.buffer.lines[buffer_line_idx];
-        let before = current_line.chars().take(char_pos).collect::<String>();
-        let after = current_line.chars().skip(char_pos).collect::<String>();
+        let current_line = view.buffer.lines[buffer_line_idx].clone();
+        let before: String = current_line.chars().take(char_pos).collect();
+        let after: String = current_line.chars().skip(char_pos).collect();
         
-        // First line: before + first paste line
+        // Update first line: before + first pasted line
         view.buffer.lines[buffer_line_idx] = format!("{}{}", before, lines[0]);
         
-        // Insert middle lines
-        for (i, line) in lines.iter().enumerate().skip(1) {
-            if i == lines.len() - 1 {
-                // Last line: last paste line + after
-                view.buffer.lines.insert(buffer_line_idx + i, format!("{}{}", line, after));
+        // Insert all middle and last lines
+        let mut insert_idx = buffer_line_idx + 1;
+        for i in 1..lines.len() {
+            let line_content = if i == lines.len() - 1 {
+                // Last line gets the 'after' text appended
+                format!("{}{}", lines[i], after)
             } else {
-                view.buffer.lines.insert(buffer_line_idx + i, line.to_string());
+                // Middle lines inserted as-is
+                lines[i].to_string()
+            };
+            
+            // Ensure we don't exceed buffer capacity
+            if insert_idx < view.buffer.lines.len() {
+                view.buffer.lines.insert(insert_idx, line_content);
+            } else {
+                view.buffer.lines.push(line_content);
             }
+            insert_idx += 1;
         }
         
-        // Move cursor to end of pasted text
-        let final_line = buffer_line_idx + lines.len() - 1;
-        let final_col = lines.last().unwrap().len() + if lines.len() == 1 { char_pos } else { 0 };
+        // Calculate final BUFFER position (not screen position yet)
+        let final_buffer_line = buffer_line_idx + lines.len() - 1;
+        let final_buffer_col = lines[lines.len() - 1].len();
         
-        // Handle scrolling if needed
-        let visible_line = final_line.saturating_sub(view.scroll_offset);
-        let size = crate::tui::terminal::Terminal::get_size()?;
-        let visible_rows = (size.height.saturating_sub(Position::HEADER + 1)) as usize;
+        // Update scroll_offset to ensure cursor will be visible
+        let size = Terminal::get_size()?;
+        let visible_rows = size.height.saturating_sub(Position::HEADER + 1) as usize;
         
-        if visible_line >= visible_rows {
-            view.scroll_offset = final_line.saturating_sub(visible_rows - 1);
+        if final_buffer_line >= view.scroll_offset + visible_rows {
+            // Cursor would be below visible area - scroll down to center it
+            view.scroll_offset = final_buffer_line.saturating_sub(visible_rows / 2);
+        } else if final_buffer_line < view.scroll_offset {
+            // Cursor would be above visible area - scroll up
+            view.scroll_offset = final_buffer_line;
         }
+        // else: cursor is already in visible range, keep current scroll_offset
         
+        // Render the view with the new scroll_offset
         view.render(caret)?;
         
-        let screen_y = Position::HEADER + (final_line - view.scroll_offset) as u16;
-        let screen_x = Position::MARGIN + final_col as u16;
+        // Use the helper function to convert buffer position to screen position
+        let final_text_pos = TextPosition {
+            line: final_buffer_line,
+            column: final_buffer_col,
+        };
+        let (screen_x, screen_y) = super::helpers::text_to_screen_pos(view, final_text_pos);
+        
+        // STEP 5: Move caret to the validated screen position
         caret.move_to(Position { x: screen_x, y: screen_y })?;
         
     } else {
         // Single line paste
         let line = &mut view.buffer.lines[buffer_line_idx];
-        line.insert_str(char_pos, text);
         
+        // Insert text at cursor position
+        if char_pos <= line.len() {
+            line.insert_str(char_pos, text);
+        } else {
+            // Pad with spaces if cursor is beyond line end
+            line.push_str(&" ".repeat(char_pos - line.len()));
+            line.push_str(text);
+        }
+        
+        // Render updated view
         view.render(caret)?;
         
         // Move cursor forward by pasted text length
-        let new_x = pos.x + text.len() as u16;
+        let size = Terminal::get_size()?;
+        let new_x = (pos.x + text.len() as u16).min(size.width.saturating_sub(1));
         caret.move_to(Position { x: new_x, y: pos.y })?;
     }
     
