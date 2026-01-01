@@ -49,6 +49,17 @@ impl TerminalEditor {
                     if event.kind == KeyEventKind::Press {
                         if let Some(action) = self.shortcuts.resolve(&event) {
                             match action {
+                                // Clipboard operations
+                                Action::Copy => {
+                                    self.view.copy_selection()?;
+                                },
+                                Action::Paste => {
+                                    self.view.paste_from_clipboard(&mut self.caret)?;
+                                },
+                                Action::Cut => {
+                                    self.view.cut_selection(&mut self.caret)?;
+                                },
+                                
                                 // Regular movement (clears selection)
                                 Action::Left => self.view.move_left(&mut self.caret)?,
                                 Action::Right => self.view.move_right(&mut self.caret)?,

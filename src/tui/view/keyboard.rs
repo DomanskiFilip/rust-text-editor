@@ -1,14 +1,19 @@
 // keyboard logic responsible for handling keyboard input and text editing
 use super::View;
-use crate::tui::{terminal::Terminal, caret::{Caret, Position}};
+use crate::tui::{
+    terminal::Terminal,
+    caret::{Caret, Position},
+};
 use std::io::Error;
 
 pub fn type_character(view: &mut View, character: char, caret: &mut Caret) -> Result<(), Error> {
+    // Delete selection first if it exists, then type
+    if view.selection.is_some() && view.selection.as_ref().unwrap().is_active() {
+        super::clipboard::delete_selection(view, caret)?;
+    }
+    
     let size = Terminal::get_size()?;
     let position = caret.get_position();
-    
-    // Clear selection when typing
-    view.selection = None;
     
     // Don't allow typing in footer
     if position.y >= size.height - 1 {
@@ -48,11 +53,13 @@ pub fn type_character(view: &mut View, character: char, caret: &mut Caret) -> Re
 }
 
 pub fn insert_newline(view: &mut View, caret: &mut Caret) -> Result<(), Error> {
+    // Delete selection first if it exists
+    if view.selection.is_some() && view.selection.as_ref().unwrap().is_active() {
+        super::clipboard::delete_selection(view, caret)?;
+    }
+    
     let size = Terminal::get_size()?;
     let position = caret.get_position();
-    
-    // Clear selection
-    view.selection = None;
     
     // Prevent typing in the absolute last row of the terminal (footer)
     if position.y >= size.height - 1 {
@@ -91,12 +98,14 @@ pub fn insert_newline(view: &mut View, caret: &mut Caret) -> Result<(), Error> {
 }
 
 pub fn delete_char(view: &mut View, caret: &mut Caret) -> Result<(), Error> {
+    // If there's a selection, delete it instead
+    if view.selection.is_some() && view.selection.as_ref().unwrap().is_active() {
+        return super::clipboard::delete_selection(view, caret);
+    }
+    
     let pos = caret.get_position();
     let buffer_line_idx = (pos.y.saturating_sub(Position::HEADER)) as usize + view.scroll_offset;
     let char_pos = (pos.x as usize).saturating_sub(Position::MARGIN as usize);
-    
-    // Clear selection
-    view.selection = None;
     
     // Check if we're in a valid line
     if buffer_line_idx >= view.buffer.lines.len() {
@@ -122,12 +131,14 @@ pub fn delete_char(view: &mut View, caret: &mut Caret) -> Result<(), Error> {
 }
 
 pub fn backspace(view: &mut View, caret: &mut Caret) -> Result<(), Error> {
+    // If there's a selection, delete it instead
+    if view.selection.is_some() && view.selection.as_ref().unwrap().is_active() {
+        return super::clipboard::delete_selection(view, caret);
+    }
+    
     let pos = caret.get_position();
     let buffer_line_idx = (pos.y.saturating_sub(Position::HEADER)) as usize + view.scroll_offset;
     let char_pos = (pos.x as usize).saturating_sub(Position::MARGIN as usize);
-    
-    // Clear selection
-    view.selection = None;
     
     if char_pos > 0 {
         // Delete character before cursor

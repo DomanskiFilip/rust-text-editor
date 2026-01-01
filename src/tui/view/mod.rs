@@ -4,13 +4,11 @@ mod mouse;
 mod keyboard;
 mod selection;
 mod buffer;
+mod clipboard;
 
 pub use buffer::Buffer;
 
-use crate::tui::{
-    terminal::Terminal,
-    caret::Caret,
-};
+use crate::tui::{terminal::Terminal, caret::Caret};
 use crate::core::selection::{Selection, TextPosition};
 use std::io::Error;
 
@@ -48,6 +46,19 @@ impl View {
         render::render_view(self, caret)
     }
     
+    // Clipboard operations - Add these methods
+    pub fn copy_selection(&self) -> Result<(), Error> {
+        clipboard::copy_selection(self)
+    }
+    
+    pub fn cut_selection(&mut self, caret: &mut Caret) -> Result<(), Error> {
+        clipboard::cut_selection(self, caret)
+    }
+    
+    pub fn paste_from_clipboard(&mut self, caret: &mut Caret) -> Result<(), Error> {
+        clipboard::paste_from_clipboard(self, caret)
+    }
+    
     // Mouse operations
     pub fn handle_mouse_down(&mut self, x: u16, y: u16, caret: &mut Caret) -> Result<(), Error> {
         mouse::handle_down(self, x, y, caret)
@@ -69,7 +80,7 @@ impl View {
         mouse::handle_triple_click(self, x, y, caret)
     }
     
-    // Keyboard operations (keep your existing implementations)
+    // Keyboard operations
     pub fn type_character(&mut self, character: char, caret: &mut Caret) -> Result<(), Error> {
         keyboard::type_character(self, character, caret)
     }
@@ -86,7 +97,7 @@ impl View {
         keyboard::backspace(self, caret)
     }
     
-    // Movement operations (keep your existing implementations)
+    // Movement operations
     pub fn move_up(&mut self, caret: &mut Caret) -> Result<(), Error> {
         self.move_without_selection("up", caret)
     }

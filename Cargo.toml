@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 crossterm = "0.29.0"
+arboard = { version = "3.4", features = ["wayland-data-control"] }
 
 [profile.release]
 opt-level = 3
