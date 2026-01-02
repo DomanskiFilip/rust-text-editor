@@ -39,4 +39,6 @@ pub enum Action {
     New,
     Quit,
     Print,
+    Undo,
+    Redo,
 }

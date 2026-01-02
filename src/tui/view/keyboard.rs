@@ -1,12 +1,17 @@
-// keyboard logic responsible for handling keyboard input and text editing
+// keyboard logic with edit tracking for undo/redo
 use super::View;
 use crate::tui::{
-    terminal::Terminal,
-    caret::{Caret, Position},
+    terminal::Terminal, 
+    caret::{Caret, Position}
 };
+use crate::core::edit_history::{Edit, EditOperation};
 use std::io::Error;
 
-pub fn type_character(view: &mut View, character: char, caret: &mut Caret) -> Result<(), Error> {
+pub fn type_character(
+    view: &mut View,
+    character: char,
+    caret: &mut Caret,
+) -> Result<Option<EditOperation>, Error> {
     // Delete selection first if it exists, then type
     if view.selection.is_some() && view.selection.as_ref().unwrap().is_active() {
         super::clipboard::delete_selection(view, caret)?;
@@ -17,25 +22,27 @@ pub fn type_character(view: &mut View, character: char, caret: &mut Caret) -> Re
     
     // Don't allow typing in footer
     if position.y >= size.height - 1 {
-        return Ok(());
+        return Ok(None);
     }
     
-    // Adjust Y coordinate to Buffer Index
     let buffer_line_idx = (position.y.saturating_sub(Position::HEADER)) as usize + view.scroll_offset;
+    let char_pos = (position.x as usize).saturating_sub(Position::MARGIN as usize);
+    
+    // Capture state before edit
+    let cursor_before = position;
+    let scroll_before = view.scroll_offset;
 
     while view.buffer.lines.len() <= buffer_line_idx {
         view.buffer.lines.push(String::new());
     }
 
-    // Adjust X coordinate to Character Index
-    let char_pos = (position.x as usize).saturating_sub(Position::MARGIN as usize);
-    
     // If at end of screen width, wrap to next line
     if position.x >= size.width - 1 {
         insert_newline(view, caret)?;
         return type_character(view, character, caret);
     }
 
+    // Insert the character
     let line = &mut view.buffer.lines[buffer_line_idx];
     if char_pos <= line.len() {
         line.insert(char_pos, character);
@@ -45,14 +52,29 @@ pub fn type_character(view: &mut View, character: char, caret: &mut Caret) -> Re
 
     view.render(caret)?;
     
-    // Use caret's move_right to handle cursor movement
     let new_offset = caret.move_right(view.scroll_offset, view.buffer.lines.len())?;
     view.scroll_offset = new_offset;
     
-    Ok(())
+    // Create edit operation
+    let operation = EditOperation {
+        edit: Edit::InsertText {
+            line: buffer_line_idx,
+            column: char_pos,
+            text: character.to_string(),
+        },
+        cursor_before,
+        cursor_after: caret.get_position(),
+        scroll_before,
+        scroll_after: view.scroll_offset,
+    };
+    
+    Ok(Some(operation))
 }
 
-pub fn insert_newline(view: &mut View, caret: &mut Caret) -> Result<(), Error> {
+pub fn insert_newline(
+    view: &mut View,
+    caret: &mut Caret,
+) -> Result<Option<EditOperation>, Error> {
     // Delete selection first if it exists
     if view.selection.is_some() && view.selection.as_ref().unwrap().is_active() {
         super::clipboard::delete_selection(view, caret)?;
@@ -61,82 +83,122 @@ pub fn insert_newline(view: &mut View, caret: &mut Caret) -> Result<(), Error> {
     let size = Terminal::get_size()?;
     let position = caret.get_position();
     
-    // Prevent typing in the absolute last row of the terminal (footer)
     if position.y >= size.height - 1 {
-        return Ok(());
+        return Ok(None);
     }
+    
+    let cursor_before = position;
+    let scroll_before = view.scroll_offset;
     
     let buffer_line_idx = (position.y.saturating_sub(Position::HEADER)) as usize + view.scroll_offset;
     let char_pos = (position.x as usize).saturating_sub(Position::MARGIN as usize);
 
-    // Ensure buffer is large enough
     while view.buffer.lines.len() <= buffer_line_idx {
         view.buffer.lines.push(String::new());
     }
     
     // Split the current line
     let current_line = &mut view.buffer.lines[buffer_line_idx];
-    let new_line_content = if char_pos < current_line.len() {
+    let remaining_text = if char_pos < current_line.len() {
         current_line.split_off(char_pos)
     } else {
         String::new()
     };
     
-    // Insert the new line into the buffer
-    view.buffer.lines.insert(buffer_line_idx + 1, new_line_content);
+    view.buffer.lines.insert(buffer_line_idx + 1, remaining_text.clone());
     
-    // Update the view (must render before moving caret so terminal state matches)
     view.render(caret)?;
-    
-    // This will handle incrementing scroll_offset if the cursor is at the bottom of the visible area
     view.scroll_offset = caret.move_down(view.scroll_offset, view.buffer.lines.len())?;
-    
-    // Final render to place cursor correctly
     view.render(caret)?;
     caret.next_line()?;
-    Ok(())
+    
+    let operation = EditOperation {
+        edit: Edit::InsertLine {
+            line: buffer_line_idx,
+            remaining_text,
+        },
+        cursor_before,
+        cursor_after: caret.get_position(),
+        scroll_before,
+        scroll_after: view.scroll_offset,
+    };
+    
+    Ok(Some(operation))
 }
 
-pub fn delete_char(view: &mut View, caret: &mut Caret) -> Result<(), Error> {
-    // If there's a selection, delete it instead
+pub fn delete_char(
+    view: &mut View,
+    caret: &mut Caret,
+) -> Result<Option<EditOperation>, Error> {
     if view.selection.is_some() && view.selection.as_ref().unwrap().is_active() {
         return super::clipboard::delete_selection(view, caret);
     }
     
     let pos = caret.get_position();
+    let cursor_before = pos;
+    let scroll_before = view.scroll_offset;
+    
     let buffer_line_idx = (pos.y.saturating_sub(Position::HEADER)) as usize + view.scroll_offset;
     let char_pos = (pos.x as usize).saturating_sub(Position::MARGIN as usize);
     
-    // Check if we're in a valid line
     if buffer_line_idx >= view.buffer.lines.len() {
-        return Ok(());
+        return Ok(None);
     }
     
     let line_len = view.buffer.lines[buffer_line_idx].len();
     
     if char_pos < line_len {
         // Delete character at cursor
-        view.buffer.lines[buffer_line_idx].remove(char_pos);
+        let deleted_char = view.buffer.lines[buffer_line_idx].remove(char_pos);
         view.render(caret)?;
         caret.move_to(pos)?;
+        
+        Ok(Some(EditOperation {
+            edit: Edit::DeleteText {
+                line: buffer_line_idx,
+                column: char_pos,
+                text: deleted_char.to_string(),
+            },
+            cursor_before,
+            cursor_after: pos,
+            scroll_before,
+            scroll_after: view.scroll_offset,
+        }))
     } else if buffer_line_idx + 1 < view.buffer.lines.len() {
         // At end of line, merge with next line
         let next_line = view.buffer.lines.remove(buffer_line_idx + 1);
+        let first_line_end = view.buffer.lines[buffer_line_idx].len();
         view.buffer.lines[buffer_line_idx].push_str(&next_line);
         view.render(caret)?;
         caret.move_to(pos)?;
+        
+        Ok(Some(EditOperation {
+            edit: Edit::JoinLines {
+                line: buffer_line_idx,
+                first_line_end,
+            },
+            cursor_before,
+            cursor_after: pos,
+            scroll_before,
+            scroll_after: view.scroll_offset,
+        }))
+    } else {
+        Ok(None)
     }
-    
-    Ok(())
 }
 
-pub fn backspace(view: &mut View, caret: &mut Caret) -> Result<(), Error> {
-    // If there's a selection, delete it instead
+pub fn backspace(
+    view: &mut View,
+    caret: &mut Caret,
+) -> Result<Option<EditOperation>, Error> {
     if view.selection.is_some() && view.selection.as_ref().unwrap().is_active() {
         return super::clipboard::delete_selection(view, caret);
     }
     
     let pos = caret.get_position();
+    let cursor_before = pos;
+    let scroll_before = view.scroll_offset;
+    
     let buffer_line_idx = (pos.y.saturating_sub(Position::HEADER)) as usize + view.scroll_offset;
     let char_pos = (pos.x as usize).saturating_sub(Position::MARGIN as usize);
     
@@ -144,11 +206,22 @@ pub fn backspace(view: &mut View, caret: &mut Caret) -> Result<(), Error> {
         // Delete character before cursor
         if let Some(line) = view.buffer.lines.get_mut(buffer_line_idx) {
             if char_pos <= line.len() {
-                line.remove(char_pos - 1);
+                let deleted_char = line.remove(char_pos - 1);
                 view.render(caret)?;
-                // Use caret's move_left
                 let new_offset = caret.move_left(view.scroll_offset)?;
                 view.scroll_offset = new_offset;
+                
+                return Ok(Some(EditOperation {
+                    edit: Edit::DeleteText {
+                        line: buffer_line_idx,
+                        column: char_pos - 1,
+                        text: deleted_char.to_string(),
+                    },
+                    cursor_before,
+                    cursor_after: caret.get_position(),
+                    scroll_before,
+                    scroll_after: view.scroll_offset,
+                }));
             }
         }
     } else if buffer_line_idx > 0 {
@@ -174,6 +247,19 @@ pub fn backspace(view: &mut View, caret: &mut Caret) -> Result<(), Error> {
                 y: Position::HEADER 
             })?;
         }
+        
+        return Ok(Some(EditOperation {
+            edit: Edit::DeleteLine {
+                line: buffer_line_idx,
+                content: current_line_content,
+                prev_line_end_len: prev_line_len,
+            },
+            cursor_before,
+            cursor_after: caret.get_position(),
+            scroll_before,
+            scroll_after: view.scroll_offset,
+        }));
     }
-    Ok(())
+    
+    Ok(None)
 }

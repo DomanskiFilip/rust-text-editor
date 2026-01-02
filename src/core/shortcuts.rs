@@ -39,6 +39,8 @@ impl Shortcuts {
             (KeyCode::Char('v'), KeyModifiers::CONTROL, Action::Paste, "Paste"),
             (KeyCode::Char('x'), KeyModifiers::CONTROL, Action::Cut, "Cut"),
             (KeyCode::Char('a'), KeyModifiers::CONTROL, Action::SelectAll, "Select all"),
+            (KeyCode::Char('z'), KeyModifiers::CONTROL, Action::Undo, "Undo"),
+            (KeyCode::Char('y'), KeyModifiers::CONTROL, Action::Redo, "Redo"),
         ]
     }
         
@@ -75,7 +77,9 @@ impl Shortcuts {
             (KeyCode::Char('v'), KeyModifiers::CONTROL) => Some(Action::Paste),
             (KeyCode::Char('x'), KeyModifiers::CONTROL) => Some(Action::Cut),
             (KeyCode::Char('a'), KeyModifiers::CONTROL) => Some(Action::SelectAll),
-            (KeyCode::Char(c), m) if m.is_empty() || m == KeyModifiers::SHIFT => Some(Action::Print),
+            (KeyCode::Char('z'), KeyModifiers::CONTROL) => Some(Action::Undo),
+            (KeyCode::Char('y'), KeyModifiers::CONTROL) => Some(Action::Redo),
+            (KeyCode::Char(_c), m) if m.is_empty() || m == KeyModifiers::SHIFT => Some(Action::Print),
             _ => None,
         }
     }

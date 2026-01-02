@@ -33,16 +33,16 @@ impl Selection {
         }
     }
     
-    pub fn clear(&mut self) {
-        self.cursor = self.anchor;
-    }
+    // pub fn clear(&mut self) {
+    //     self.cursor = self.anchor;
+    // }
     
     pub fn update_cursor(&mut self, new_pos: TextPosition) {
         self.cursor = new_pos;
     }
     
-    pub fn reset_anchor(&mut self, pos: TextPosition) {
-        self.anchor = pos;
-        self.cursor = pos;
-    }
+    // pub fn reset_anchor(&mut self, pos: TextPosition) {
+    //     self.anchor = pos;
+    //     self.cursor = pos;
+    // }
 }

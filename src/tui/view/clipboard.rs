@@ -1,8 +1,9 @@
-// clipboard module responsible for clipboard operations
+// clipboard module with EditOperation tracking
 use super::View;
 use crate::tui::caret::{Caret, Position};
 use crate::tui::terminal::Terminal;
 use crate::core::selection::TextPosition;
+use crate::core::edit_history::{Edit, EditOperation};
 use std::io::Error;
 
 pub fn copy_selection(view: &View) -> Result<(), Error> {
@@ -22,17 +23,15 @@ pub fn copy_selection(view: &View) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn cut_selection(view: &mut View, caret: &mut Caret) -> Result<(), Error> {
+pub fn cut_selection(view: &mut View, caret: &mut Caret) -> Result<Option<EditOperation>, Error> {
     // First copy
     copy_selection(view)?;
     
-    // Then delete
-    delete_selection(view, caret)?;
-    
-    Ok(())
+    // Then delete and return the operation
+    delete_selection(view, caret)
 }
 
-pub fn paste_from_clipboard(view: &mut View, caret: &mut Caret) -> Result<(), Error> {
+pub fn paste_from_clipboard(view: &mut View, caret: &mut Caret) -> Result<Option<EditOperation>, Error> {
     // Delete selection first if it exists
     if view.selection.is_some() && view.selection.as_ref().unwrap().is_active() {
         delete_selection(view, caret)?;
@@ -41,37 +40,56 @@ pub fn paste_from_clipboard(view: &mut View, caret: &mut Caret) -> Result<(), Er
     // Get text from clipboard
     if let Ok(mut clipboard) = arboard::Clipboard::new() {
         if let Ok(text) = clipboard.get_text() {
-            insert_text_at_cursor(view, caret, &text)?;
+            return insert_text_at_cursor(view, caret, &text);
         }
     }
     
-    Ok(())
+    Ok(None)
 }
 
-pub fn delete_selection(view: &mut View, caret: &mut Caret) -> Result<(), Error> {
+pub fn delete_selection(view: &mut View, caret: &mut Caret) -> Result<Option<EditOperation>, Error> {
     if let Some(selection) = view.selection.take() {
         if !selection.is_active() {
             view.selection = Some(selection);
-            return Ok(());
+            return Ok(None);
         }
         
         let (start, end) = selection.get_range();
+        let cursor_before = caret.get_position();
+        let scroll_before = view.scroll_offset;
+        
+        // Extract the text that will be deleted (for undo)
+        let deleted_text = extract_text(view, start, end);
         
         // Delete the selected text
         delete_range(view, start, end)?;
         
         // Move cursor to start of deleted range
         let (screen_x, screen_y) = super::helpers::text_to_screen_pos(view, start);
-        if start.line < view.scroll_offset {
-            view.scroll_offset = start.line;
-        }
         caret.move_to(Position { x: screen_x, y: screen_y })?;
         
-        view.needs_redraw = true;
         view.render(caret)?;
+        
+        // Create edit operation
+        let operation = EditOperation {
+            edit: Edit::ReplaceRange {
+                start_line: start.line,
+                start_column: start.column,
+                end_line: end.line,
+                end_column: end.column,
+                old_text: deleted_text,
+                new_text: String::new(),
+            },
+            cursor_before,
+            cursor_after: caret.get_position(),
+            scroll_before,
+            scroll_after: view.scroll_offset,
+        };
+        
+        return Ok(Some(operation));
     }
     
-    Ok(())
+    Ok(None)
 }
 
 // Helper: Extract text from selection range
@@ -156,17 +174,15 @@ fn delete_range(view: &mut View, start: TextPosition, end: TextPosition) -> Resu
         view.buffer.lines.insert(start.line, merged_line);
     }
     
-    // Ensure the buffer is never truly empty
-    if view.buffer.lines.is_empty() {
-        view.buffer.lines.push(String::new());
-    }
-    
     Ok(())
 }
 
-// Helper: Insert text at cursor position
-fn insert_text_at_cursor(view: &mut View, caret: &mut Caret, text: &str) -> Result<(), Error> {
+// Helper: Insert text at cursor position and return EditOperation
+fn insert_text_at_cursor(view: &mut View, caret: &mut Caret, text: &str) -> Result<Option<EditOperation>, Error> {
     let pos = caret.get_position();
+    let cursor_before = pos;
+    let scroll_before = view.scroll_offset;
+    
     let buffer_line_idx = (pos.y.saturating_sub(Position::HEADER)) as usize + view.scroll_offset;
     let char_pos = (pos.x as usize).saturating_sub(Position::MARGIN as usize);
     
@@ -177,11 +193,11 @@ fn insert_text_at_cursor(view: &mut View, caret: &mut Caret, text: &str) -> Resu
     
     // Check if text contains newlines
     if text.contains('\n') {
-        // Multi-line paste - use split to preserve empty lines
+        // Multi-line paste
         let lines: Vec<&str> = text.split('\n').collect();
         
         if lines.is_empty() {
-            return Ok(());
+            return Ok(None);
         }
         
         // Split current line at cursor
@@ -196,14 +212,11 @@ fn insert_text_at_cursor(view: &mut View, caret: &mut Caret, text: &str) -> Resu
         let mut insert_idx = buffer_line_idx + 1;
         for i in 1..lines.len() {
             let line_content = if i == lines.len() - 1 {
-                // Last line gets the 'after' text appended
                 format!("{}{}", lines[i], after)
             } else {
-                // Middle lines inserted as-is
                 lines[i].to_string()
             };
             
-            // Ensure we don't exceed buffer capacity
             if insert_idx < view.buffer.lines.len() {
                 view.buffer.lines.insert(insert_idx, line_content);
             } else {
@@ -212,57 +225,72 @@ fn insert_text_at_cursor(view: &mut View, caret: &mut Caret, text: &str) -> Resu
             insert_idx += 1;
         }
         
-        // Calculate final BUFFER position (not screen position yet)
+        // Calculate final position
         let final_buffer_line = buffer_line_idx + lines.len() - 1;
         let final_buffer_col = lines[lines.len() - 1].len();
         
-        // Update scroll_offset to ensure cursor will be visible
+        // Update scroll_offset
         let size = Terminal::get_size()?;
         let visible_rows = size.height.saturating_sub(Position::HEADER + 1) as usize;
         
         if final_buffer_line >= view.scroll_offset + visible_rows {
-            // Cursor would be below visible area - scroll down to center it
             view.scroll_offset = final_buffer_line.saturating_sub(visible_rows / 2);
         } else if final_buffer_line < view.scroll_offset {
-            // Cursor would be above visible area - scroll up
             view.scroll_offset = final_buffer_line;
         }
-        // else: cursor is already in visible range, keep current scroll_offset
         
-        // Render the view with the new scroll_offset
         view.render(caret)?;
         
-        // Use the helper function to convert buffer position to screen position
         let final_text_pos = TextPosition {
             line: final_buffer_line,
             column: final_buffer_col,
         };
         let (screen_x, screen_y) = super::helpers::text_to_screen_pos(view, final_text_pos);
-        
-        // STEP 5: Move caret to the validated screen position
         caret.move_to(Position { x: screen_x, y: screen_y })?;
         
+        // Create edit operation for multi-line paste
+        Ok(Some(EditOperation {
+            edit: Edit::ReplaceRange {
+                start_line: buffer_line_idx,
+                start_column: char_pos,
+                end_line: buffer_line_idx,
+                end_column: char_pos,
+                old_text: String::new(),
+                new_text: text.to_string(),
+            },
+            cursor_before,
+            cursor_after: caret.get_position(),
+            scroll_before,
+            scroll_after: view.scroll_offset,
+        }))
     } else {
         // Single line paste
         let line = &mut view.buffer.lines[buffer_line_idx];
         
-        // Insert text at cursor position
         if char_pos <= line.len() {
             line.insert_str(char_pos, text);
         } else {
-            // Pad with spaces if cursor is beyond line end
             line.push_str(&" ".repeat(char_pos - line.len()));
             line.push_str(text);
         }
         
-        // Render updated view
         view.render(caret)?;
         
-        // Move cursor forward by pasted text length
         let size = Terminal::get_size()?;
         let new_x = (pos.x + text.len() as u16).min(size.width.saturating_sub(1));
         caret.move_to(Position { x: new_x, y: pos.y })?;
+        
+        // Create edit operation for single-line paste
+        Ok(Some(EditOperation {
+            edit: Edit::InsertText {
+                line: buffer_line_idx,
+                column: char_pos,
+                text: text.to_string(),
+            },
+            cursor_before,
+            cursor_after: caret.get_position(),
+            scroll_before,
+            scroll_after: view.scroll_offset,
+        }))
     }
-    
-    Ok(())
 }
