@@ -52,7 +52,7 @@ impl TerminalEditor {
                 // Try to render the prompt to the user. Ignore render/execute errors
                 let _ = self.view.render_if_needed(
                     &self.caret,
-                    self.tab_manager.current_tab.has_unsaved_changes,
+                    self.has_unsaved_changes,
                 );
                 let _ = Terminal::execute();
             }
@@ -72,7 +72,7 @@ impl TerminalEditor {
                     // Try to render the cleared footer; ignore errors to avoid recursive failures.
                     let _ = self.view.render_if_needed(
                         &self.caret,
-                        self.tab_manager.current_tab.has_unsaved_changes,
+                        self.has_unsaved_changes,
                     );
                     let _ = Terminal::execute();
                 }
