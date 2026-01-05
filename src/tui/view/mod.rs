@@ -4,6 +4,7 @@ mod clipboard;
 mod keyboard;
 mod mouse;
 mod render;
+mod search;
 mod selection;
 
 pub use buffer::Buffer;
@@ -11,12 +12,15 @@ pub use buffer::Buffer;
 use crate::core::edit_history::EditOperation;
 use crate::core::selection::{Selection, TextPosition};
 use crate::tui::{caret::Caret, terminal::Terminal};
+pub use search::{SearchState};
 use std::io::Error;
 
 // Prompt kind describes the intent of the footer prompt.
 pub(crate) enum PromptKind {
     SaveAs,
     Error,
+    Search,
+    SearchInfo,
     // Input,
     // Other,
 }
@@ -37,6 +41,7 @@ pub struct View {
     pub(in crate::tui::view) show_shortcuts: bool,
     pub(in crate::tui) prompt: Option<Prompt>,
     pub(in crate::tui) needs_redraw: bool,
+    pub search_state: Option<SearchState>,
 }
 
 impl View {
@@ -50,6 +55,7 @@ impl View {
             is_dragging: false,
             prompt: None,
             needs_redraw: true,
+            search_state: None,
         }
     }
 
@@ -141,7 +147,7 @@ impl View {
         Ok(result)
     }
 
-    pub fn paste_from_clipboard(&mut self, caret: &mut Caret,) -> Result<Option<EditOperation>, Error> {
+    pub fn paste_from_clipboard(&mut self, caret: &mut Caret) -> Result<Option<EditOperation>, Error> {
         let result = clipboard::paste_from_clipboard(self, caret)?;
         if result.is_some() {
             self.needs_redraw = true;
@@ -150,10 +156,38 @@ impl View {
     }
 
     // Search in text
-    pub fn search(&mut self) -> Result<(), Error> {
-        // search::search(self)?;
+    pub fn search(&mut self, caret: &mut Caret) -> Result<(), Error> {
+        search::search(self, caret)?;
         self.needs_redraw = true;
         Ok(())
+    }
+    
+    pub fn set_search_state(&mut self, state: Option<SearchState>) {
+        self.search_state = state;
+    }
+    
+    pub fn set_current_match(&mut self, idx: usize) {
+        if let Some(ref mut state) = self.search_state {
+            state.current_match_idx = idx;
+        }
+    }
+    
+    pub fn next_search_match(&mut self, caret: &mut Caret) -> Result<(), Error> {
+        search::next_search_match(self, caret)?;
+        Ok(())
+    }
+    
+    pub fn prev_search_match(&mut self, caret: &mut Caret) -> Result<(), Error> {
+        search::prev_search_match(self, caret)?;
+        Ok(())
+    }
+    
+    pub fn clear_search(&mut self) {
+        search::clear_search(self);
+    }
+    
+    pub fn is_search_active(&self) -> bool {
+        self.search_state.is_some()
     }
 
     // Mouse operations
@@ -188,11 +222,7 @@ impl View {
     }
 
     // Keyboard operations - Return Option<EditOperation>
-    pub fn type_character(
-        &mut self,
-        character: char,
-        caret: &mut Caret,
-    ) -> Result<Option<EditOperation>, Error> {
+    pub fn type_character(&mut self, character: char, caret: &mut Caret,) -> Result<Option<EditOperation>, Error> {
         let result = keyboard::type_character(self, character, caret)?;
         if result.is_some() {
             self.needs_redraw = true;
@@ -302,11 +332,7 @@ impl View {
         Ok(())
     }
 
-    pub fn move_without_selection(
-        &mut self,
-        direction: &str,
-        caret: &mut Caret,
-    ) -> Result<(), Error> {
+    pub fn move_without_selection(&mut self, direction: &str, caret: &mut Caret,) -> Result<(), Error> {
         selection::move_without_selection(self, direction, caret)
     }
 
@@ -325,10 +351,7 @@ impl View {
     }
 
     // Helper for clamping cursor to line length
-    pub(in crate::tui::view) fn clamp_cursor_to_line(
-        &self,
-        caret: &mut Caret,
-    ) -> Result<(), Error> {
+    pub(in crate::tui::view) fn clamp_cursor_to_line(&self, caret: &mut Caret,) -> Result<(), Error> {
         use crate::tui::caret::Position;
 
         let pos = caret.get_position();
@@ -364,6 +387,7 @@ impl Default for View {
             is_dragging: false,
             prompt: None,
             needs_redraw: true,
+            search_state: None,
         }
     }
 }
@@ -373,11 +397,7 @@ pub(in crate::tui::view) mod helpers {
     use super::*;
     use crate::tui::caret::Position;
 
-    pub fn screen_to_text_pos(
-        view: &View,
-        screen_x: u16,
-        screen_y: u16,
-    ) -> Result<TextPosition, Error> {
+    pub fn screen_to_text_pos(view: &View, screen_x: u16, screen_y: u16,) -> Result<TextPosition, Error> {
         let size = Terminal::get_size()?;
 
         // Clamp to valid screen area (don't include footer)

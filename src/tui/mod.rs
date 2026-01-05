@@ -51,6 +51,32 @@ impl TerminalEditor {
             match read()? {
                 Event::Key(event) => {
                     if event.kind == KeyEventKind::Press {
+                        // Handle search navigation when search is active
+                        if self.view.is_search_active() {
+                            match event.code {
+                                KeyCode::Down => {
+                                    self.view.next_search_match(&mut self.caret)?;
+                                    Terminal::execute()?;
+                                    continue;
+                                }
+                                KeyCode::Up => {
+                                    self.view.prev_search_match(&mut self.caret)?;
+                                    Terminal::execute()?;
+                                    continue;
+                                }
+                                KeyCode::Esc => {
+                                    self.view.clear_search();
+                                    self.view.render(&mut self.caret)?;
+                                    Terminal::execute()?;
+                                    continue;
+                                }
+                                _ => {
+                                    // Any other key exits search mode
+                                    self.view.clear_search();
+                                }
+                            }
+                        }
+                        
                         if let Some(action) = self.shortcuts.resolve(&event) {
                             match action {
                                 // Undo/Redo
@@ -60,17 +86,17 @@ impl TerminalEditor {
                                 Action::Redo => {
                                     self.perform_redo()?;
                                 }
-
+    
                                 // Save
                                 Action::Save => {
                                     self.save_file()?;
                                 }
-
+    
                                 // Search in text
                                 Action::Search => {
-                                    self.view.search()?;
+                                    self.view.search(&mut self.caret)?;
                                 }
-
+    
                                 // Clipboard operations
                                 Action::Copy => {
                                     self.view.copy_selection()?;
@@ -89,7 +115,7 @@ impl TerminalEditor {
                                         self.has_unsaved_changes = true;
                                     }
                                 }
-
+    
                                 // Regular movement (clears selection)
                                 Action::Left => self.view.move_left(&mut self.caret)?,
                                 Action::Right => self.view.move_right(&mut self.caret)?,
@@ -99,7 +125,7 @@ impl TerminalEditor {
                                 Action::Bottom => self.view.move_bottom(&mut self.caret)?,
                                 Action::MaxLeft => self.view.move_max_left(&mut self.caret)?,
                                 Action::MaxRight => self.view.move_max_right(&mut self.caret)?,
-
+    
                                 // Movement with selection (Shift+arrows)
                                 Action::SelectLeft => {
                                     self.view.move_with_selection("left", &mut self.caret)?
@@ -126,7 +152,7 @@ impl TerminalEditor {
                                     .view
                                     .move_with_selection("max_right", &mut self.caret)?,
                                 Action::SelectAll => self.view.select_all(&mut self.caret)?,
-
+    
                                 // Editing operations that generate EditOperations
                                 Action::NextLine => {
                                     if let Some(op) = self.view.insert_newline(&mut self.caret)? {
@@ -146,7 +172,7 @@ impl TerminalEditor {
                                         self.has_unsaved_changes = true;
                                     }
                                 }
-
+    
                                 Action::ToggleCtrlShortcuts => {
                                     self.view.toggle_ctrl_shortcuts();
                                     self.view.render(&mut self.caret)?;
@@ -249,7 +275,7 @@ impl TerminalEditor {
 
     fn save_file(&mut self) -> Result<(), std::io::Error> {
         use std::fs;
-
+    
         if let Some(ref filename) = self.view.filename {
             // Find last non-empty line to avoid saving empty buffer space
             let last_line = self
@@ -259,7 +285,7 @@ impl TerminalEditor {
                 .iter()
                 .rposition(|line| !line.is_empty())
                 .unwrap_or(0);
-
+    
             // Get only the actual content lines
             let content_lines: Vec<String> = self
                 .view
@@ -269,15 +295,15 @@ impl TerminalEditor {
                 .take(last_line + 1)
                 .cloned()
                 .collect();
-
+    
             // Join with newlines
             let content = content_lines.join("\n");
-
+    
             // Write to file
             match fs::write(filename, content) {
                 Ok(_) => {
                     self.has_unsaved_changes = false;
-
+    
                     // Mark for redraw to update footer status
                     self.view.needs_redraw = true;
                     self.view
@@ -294,15 +320,17 @@ impl TerminalEditor {
         } else {
             // Show SaveAs prompt in footer and capture keys until Enter/Esc.
             use std::fs;
-
-            // Show prompt in footer
-            self.view
-                .show_prompt(crate::tui::view::PromptKind::SaveAs, "Save as:".to_string());
+    
+            // Show prompt in footer WITH Esc hint
+            self.view.show_prompt(
+                crate::tui::view::PromptKind::SaveAs,
+                "Save as: ".to_string(),  // Note the space after colon
+            );
             self.view.needs_redraw = true;
             self.view
                 .render_if_needed(&self.caret, self.has_unsaved_changes)?;
             Terminal::execute()?;
-
+    
             // Event loop to capture prompt input (keeps editor in raw mode)
             loop {
                 match read()? {
@@ -321,15 +349,15 @@ impl TerminalEditor {
                                     let filename = input.to_string();
                                     // Clear prompt immediately (UI will update)
                                     self.view.clear_prompt();
-
+    
                                     if filename.is_empty() {
                                         // nothing entered -> cancel
                                         break;
                                     }
-
+    
                                     // Set filename and write file
                                     self.view.set_filename(filename.clone());
-
+    
                                     // Find last non-empty line to avoid saving empty buffer space
                                     let last_line = self
                                         .view
@@ -338,7 +366,7 @@ impl TerminalEditor {
                                         .iter()
                                         .rposition(|line| !line.is_empty())
                                         .unwrap_or(0);
-
+    
                                     // Get only the actual content lines
                                     let content_lines: Vec<String> = self
                                         .view
@@ -348,10 +376,10 @@ impl TerminalEditor {
                                         .take(last_line + 1)
                                         .cloned()
                                         .collect();
-
+    
                                     // Join with newlines
                                     let content = content_lines.join("\n");
-
+    
                                     // Write to file
                                     match fs::write(&filename, content) {
                                         Ok(_) => {
@@ -392,7 +420,7 @@ impl TerminalEditor {
                             }
                             _ => {}
                         }
-
+    
                         // Re-render footer after each key handled
                         self.view
                             .render_if_needed(&self.caret, self.has_unsaved_changes)?;
@@ -402,7 +430,7 @@ impl TerminalEditor {
                 }
             }
         }
-
+    
         Ok(())
     }
 }

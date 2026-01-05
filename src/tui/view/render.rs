@@ -275,15 +275,39 @@ fn draw_prompt_footer(view: &View, _caret: &Caret) -> Result<(), Error> {
         // Use local paths for enum to avoid needing extra imports
         match &p.kind {
             super::PromptKind::SaveAs => {
-                // Show label and current input (input may be empty)
                 queue!(
                     stdout(),
-                    SetForegroundColor(Color::White),
-                    Print(format!(" {} {}", p.message, p.input)),
+                    SetForegroundColor(Color::Yellow),
+                    SetAttribute(Attribute::Bold),
+                    Print(format!("{}{}", p.message, p.input)),
                 )?;
+                draw_esc_hint(size.width, footer_row)?;
+            }
+            super::PromptKind::Search => {
+                queue!(
+                    stdout(),
+                    SetForegroundColor(Color::Yellow),
+                    SetAttribute(Attribute::Bold),
+                    Print(format!(" {} ", p.message)),
+                    SetAttribute(Attribute::Reset),
+                    SetForegroundColor(Color::White),
+                    Print(&p.input),
+                )?;
+                draw_esc_hint(size.width, footer_row)?;
+            }
+            super::PromptKind::SearchInfo => {
+                queue!(
+                    stdout(),
+                    SetForegroundColor(Color::Green),
+                    SetAttribute(Attribute::Bold),
+                    Print(" 🔍 "),
+                    SetAttribute(Attribute::Reset),
+                    SetForegroundColor(Color::White),
+                    Print(&p.message),
+                )?;
+                draw_esc_hint(size.width, footer_row)?;
             }
             super::PromptKind::Error => {
-                // Show error message in red bold
                 queue!(
                     stdout(),
                     SetForegroundColor(Color::Red),
@@ -292,25 +316,13 @@ fn draw_prompt_footer(view: &View, _caret: &Caret) -> Result<(), Error> {
                     SetAttribute(Attribute::Reset),
                 )?;
             }
-            _ => {
-                // Generic message
-                queue!(
-                    stdout(),
-                    SetForegroundColor(Color::White),
-                    Print(format!(" {} ", p.message)),
-                )?;
-            }
         }
     }
 
     Ok(())
 }
 
-fn render_line_with_selection(
-    line: &str,
-    line_idx: usize,
-    selection_range: Option<(TextPosition, TextPosition)>,
-) -> Result<(), Error> {
+fn render_line_with_selection(line: &str, line_idx: usize, selection_range: Option<(TextPosition, TextPosition)>,) -> Result<(), Error> {
     if let Some((start, end)) = selection_range {
         let in_selection = line_idx >= start.line && line_idx <= end.line;
 
@@ -363,5 +375,21 @@ fn render_line_with_selection(
 
 pub fn print_text(text: &str) -> Result<(), Error> {
     queue!(stdout(), Print(text))?;
+    Ok(())
+}
+
+// Helper function to draw the Esc hint on the right side of the footer
+fn draw_esc_hint(screen_width: u16, footer_row: u16) -> Result<(), Error> {
+    let hint = " Press Esc to cancel ";
+    let hint_width = hint.len() as u16;
+    let hint_pos = screen_width.saturating_sub(hint_width + 1);
+    queue!(
+        stdout(),
+        MoveTo(hint_pos, footer_row),
+        SetForegroundColor(Color::Yellow),
+        SetAttribute(Attribute::Italic),
+        Print(hint),
+        SetAttribute(Attribute::Reset),
+    )?;
     Ok(())
 }
