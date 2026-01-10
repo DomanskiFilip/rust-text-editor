@@ -201,7 +201,7 @@ impl TabManager {
         Ok(())
     }
 
-    /// Create new tab at position 1, shift everything else down
+    // Create new tab at position 1, shift everything else down
     pub fn new_tab(&mut self) -> usize {
         // If at max capacity, remove the last tab (oldest/least used)
         if self.tabs.len() >= self.max_tabs {
@@ -223,7 +223,7 @@ impl TabManager {
         0
     }
 
-    /// Open file in tab 1, push everything else down
+    // Open file in tab 1, push everything else down
     pub fn open_file_in_new_tab(&mut self, path: &str) -> Result<usize, Error> {
         // Check if file is already open
         for (i, tab) in self.tabs.iter().enumerate() {

@@ -5,7 +5,7 @@ mod themes;
 
 pub use app::QuickNotepadApp;
 
-/// Entry point for GUI mode
+// Entry point for GUI mode
 pub fn run(file_path: Option<String>) {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

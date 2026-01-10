@@ -1,6 +1,7 @@
+// src/gui/editor.rs
 use super::state::EditorState;
 use crate::core::selection::{Selection, TextPosition};
-use egui::{Color32, FontId, Pos2, Rect, Response, Sense, Stroke, Ui, Vec2};
+use egui::{Color32, FontId, Pos2, Rect, Response, Sense, Stroke, Ui};
 
 pub struct EditorPanel<'a> {
     state: &'a mut EditorState,
@@ -9,19 +10,14 @@ pub struct EditorPanel<'a> {
 
 impl<'a> EditorPanel<'a> {
     pub fn new(state: &'a mut EditorState, accepts_input: bool) -> Self {
-        Self {
-            state,
-            accepts_input,
-        }
+        Self { state, accepts_input }
     }
 
     pub fn show(&mut self, ui: &mut Ui) -> Response {
-        // Search bar if active
         if self.state.search_active {
             self.show_search_bar(ui);
         }
 
-        // Main editor area
         let available_rect = ui.available_rect_before_wrap();
         let response = ui.allocate_rect(available_rect, Sense::click_and_drag());
 
@@ -31,7 +27,7 @@ impl<'a> EditorPanel<'a> {
         }
 
         // Render editor content
-        self.render_content(ui, available_rect);
+        self.render_content(ui, &response, available_rect);
 
         response
     }
@@ -104,13 +100,15 @@ impl<'a> EditorPanel<'a> {
         if ui.input(|i| i.key_pressed(egui::Key::Tab)) && !has_ctrl {
             self.state.insert_text("    "); // 4 spaces
         }
+        
+        
 
         // Handle arrow keys with optional shift for selection
         if ui.input(|i| i.key_pressed(egui::Key::ArrowLeft)) && !has_ctrl {
             if has_shift {
                 self.move_cursor_with_selection(-1, 0);
             } else {
-                self.move_cursor(-1, 0);
+                self.state.move_cursor(-1, 0);
             }
         }
 
@@ -118,7 +116,7 @@ impl<'a> EditorPanel<'a> {
             if has_shift {
                 self.move_cursor_with_selection(1, 0);
             } else {
-                self.move_cursor(1, 0);
+                self.state.move_cursor(1, 0);
             }
         }
 
@@ -126,7 +124,7 @@ impl<'a> EditorPanel<'a> {
             if has_shift {
                 self.move_cursor_with_selection(0, -1);
             } else {
-                self.move_cursor(0, -1);
+                self.state.move_cursor(0, -1);
             }
         }
 
@@ -134,7 +132,7 @@ impl<'a> EditorPanel<'a> {
             if has_shift {
                 self.move_cursor_with_selection(0, 1);
             } else {
-                self.move_cursor(0, 1);
+                self.state.move_cursor(0, 1);
             }
         }
 
@@ -208,55 +206,6 @@ impl<'a> EditorPanel<'a> {
 
         if response.drag_stopped() {
             self.state.is_dragging = false;
-        }
-    }
-
-    fn move_cursor(&mut self, dx: isize, dy: isize) {
-        // Clear selection when moving without shift
-        self.state.selection = None;
-
-        if dx < 0 {
-            // Left
-            if self.state.cursor_pos.column > 0 {
-                self.state.cursor_pos.column -= 1;
-            } else if self.state.cursor_pos.line > 0 {
-                self.state.cursor_pos.line -= 1;
-                let line_len = self
-                    .state
-                    .current_buffer()
-                    .lines
-                    .get(self.state.cursor_pos.line)
-                    .map(|l| l.len())
-                    .unwrap_or(0);
-                self.state.cursor_pos.column = line_len;
-            }
-        } else if dx > 0 {
-            // Right
-            let line_len = self
-                .state
-                .current_buffer()
-                .lines
-                .get(self.state.cursor_pos.line)
-                .map(|l| l.len())
-                .unwrap_or(0);
-
-            if self.state.cursor_pos.column < line_len {
-                self.state.cursor_pos.column += 1;
-            } else if self.state.cursor_pos.line < self.state.current_buffer().lines.len() - 1 {
-                self.state.cursor_pos.line += 1;
-                self.state.cursor_pos.column = 0;
-            }
-        }
-
-        if dy < 0 && self.state.cursor_pos.line > 0 {
-            // Up
-            self.state.cursor_pos.line -= 1;
-            self.clamp_column();
-        } else if dy > 0 && self.state.cursor_pos.line < self.state.current_buffer().lines.len() - 1
-        {
-            // Down
-            self.state.cursor_pos.line += 1;
-            self.clamp_column();
         }
     }
 
@@ -340,7 +289,7 @@ impl<'a> EditorPanel<'a> {
             sel.update_cursor(text_pos);
         }
     }
-
+    
     fn screen_pos_to_text_pos(&self, ui: &Ui, pos: Pos2) -> TextPosition {
         // Approximate font metrics for monospace font at 14.0 size
         let row_height = 20.0;
@@ -369,154 +318,117 @@ impl<'a> EditorPanel<'a> {
         TextPosition { line, column }
     }
 
-    fn render_content(&mut self, ui: &mut Ui, rect: Rect) {
+    fn render_content(&mut self, ui: &mut Ui, response: &Response, rect: Rect) {
         let painter = ui.painter();
         let font_id = FontId::monospace(14.0);
-        // Approximate font metrics for monospace font at 14.0 size
         let row_height = 20.0;
         let char_width = 8.4;
-
-        // Calculate visible area
-        let visible_rows = (rect.height() / row_height) as usize + 1;
-        let start_line = self.state.scroll_offset.0;
-        let end_line = (start_line + visible_rows).min(self.state.current_buffer().lines.len());
-
-        // Draw line numbers margin
         let margin_width = 40.0;
-        let margin_rect = Rect::from_min_size(rect.min, Vec2::new(margin_width, rect.height()));
+        let scroll_line = self.state.scroll_offset.0;
+    
+        //  Handle Mouse Interaction
+        if response.clicked() || response.dragged() {
+            if let Some(mouse_pos) = response.interact_pointer_pos() {
+                let local_pos = mouse_pos - rect.min;
+                
+                // Get metadata using temporary borrows that drop immediately after this expression
+                let line_count = self.state.current_buffer().lines.len();
+                let clicked_line = ((local_pos.y / row_height) as usize + scroll_line)
+                    .min(line_count.saturating_sub(1));
+                
+                let line_len = self.state.current_buffer().lines[clicked_line].len();
+                let clicked_col = ((local_pos.x - margin_width) / char_width).round().max(0.0) as usize;
+                let clicked_col = clicked_col.min(line_len);
+    
+                let new_pos = TextPosition { line: clicked_line, column: clicked_col };
+    
+                if response.clicked() {
+                    self.state.cursor_pos = new_pos;
+                    self.state.selection = Some(Selection { anchor: new_pos, cursor: new_pos });
+                } else if response.dragged() {
+                    self.state.cursor_pos = new_pos;
+                    if let Some(sel) = &mut self.state.selection {
+                        sel.cursor = new_pos;
+                    }
+                }
+            }
+        }
+    
+        // Draw Text with Selection Highlight
+        let visible_rows = (rect.height() / row_height) as usize + 1;
+        let end_line = (scroll_line + visible_rows).min(self.state.current_buffer().lines.len());
+    
+        // Draw line numbers margin background
+        let margin_rect = Rect::from_min_size(rect.min, egui::Vec2::new(margin_width, rect.height()));
         painter.rect_filled(margin_rect, 0.0, Color32::from_rgb(38, 33, 28));
-
-        // Get selection range if active
-        let selection_range = self
-            .state
-            .selection
-            .as_ref()
+    
+        let selection_range = self.state.selection.as_ref()
             .filter(|s| s.is_active())
             .map(|s| s.get_range());
-
-        // Draw content
-        for (visual_idx, line_idx) in (start_line..end_line).enumerate() {
+    
+        let buffer = self.state.current_buffer();
+    
+        for (visual_idx, line_idx) in (scroll_line..end_line).enumerate() {
             let y_pos = rect.top() + visual_idx as f32 * row_height;
-
-            // Draw line number
-            let line_num_pos = Pos2::new(rect.left() + 5.0, y_pos);
+    
+            // 1. Draw line number
             painter.text(
-                line_num_pos,
+                Pos2::new(rect.left() + 5.0, y_pos),
                 egui::Align2::LEFT_TOP,
                 format!("{:>3}", line_idx + 1),
                 FontId::monospace(12.0),
                 Color32::from_rgb(200, 160, 100),
             );
-
-            // Draw line content with selection highlight
-            if let Some(line) = self.state.current_buffer().lines.get(line_idx) {
+    
+            // Draw Text with Selection Highlight
+            if let Some(line) = buffer.lines.get(line_idx) {
                 let text_pos = Pos2::new(rect.left() + margin_width, y_pos);
-
-                // Check if this line has selection
+    
                 if let Some((start, end)) = selection_range {
                     if line_idx >= start.line && line_idx <= end.line {
                         let chars: Vec<char> = line.chars().collect();
-                        let sel_start = if line_idx == start.line {
-                            start.column
-                        } else {
-                            0
-                        };
-                        let sel_end = if line_idx == end.line {
-                            end.column
-                        } else {
-                            chars.len()
-                        };
-
+                        let sel_start = if line_idx == start.line { start.column } else { 0 };
+                        let sel_end = if line_idx == end.line { end.column } else { chars.len() };
+    
                         // Before selection
                         if sel_start > 0 {
                             let before: String = chars[..sel_start].iter().collect();
-                            painter.text(
-                                text_pos,
-                                egui::Align2::LEFT_TOP,
-                                before,
-                                font_id.clone(),
-                                Color32::WHITE,
-                            );
+                            painter.text(text_pos, egui::Align2::LEFT_TOP, before, font_id.clone(), Color32::WHITE);
                         }
-
+    
                         // Selection highlight
                         if sel_start < chars.len() && sel_end > sel_start {
-                            let selected: String =
-                                chars[sel_start..sel_end.min(chars.len())].iter().collect();
+                            let selected: String = chars[sel_start..sel_end.min(chars.len())].iter().collect();
                             let sel_x = text_pos.x + sel_start as f32 * char_width;
                             let sel_pos = Pos2::new(sel_x, y_pos);
-                            let sel_rect = Rect::from_min_size(
-                                sel_pos,
-                                Vec2::new(selected.len() as f32 * char_width, row_height),
-                            );
+                            let sel_rect = Rect::from_min_size(sel_pos, egui::Vec2::new(selected.len() as f32 * char_width, row_height));
+                            
                             painter.rect_filled(sel_rect, 0.0, Color32::from_rgb(50, 100, 200));
-                            painter.text(
-                                sel_pos,
-                                egui::Align2::LEFT_TOP,
-                                selected,
-                                font_id.clone(),
-                                Color32::WHITE,
-                            );
+                            painter.text(sel_pos, egui::Align2::LEFT_TOP, selected, font_id.clone(), Color32::WHITE);
                         }
-
+    
                         // After selection
                         if sel_end < chars.len() {
                             let after: String = chars[sel_end..].iter().collect();
                             let after_x = text_pos.x + sel_end as f32 * char_width;
-                            painter.text(
-                                Pos2::new(after_x, y_pos),
-                                egui::Align2::LEFT_TOP,
-                                after,
-                                font_id.clone(),
-                                Color32::WHITE,
-                            );
+                            painter.text(Pos2::new(after_x, y_pos), egui::Align2::LEFT_TOP, after, font_id.clone(), Color32::WHITE);
                         }
                     } else {
-                        // No selection on this line
-                        painter.text(
-                            text_pos,
-                            egui::Align2::LEFT_TOP,
-                            line,
-                            font_id.clone(),
-                            Color32::WHITE,
-                        );
+                        painter.text(text_pos, egui::Align2::LEFT_TOP, line, font_id.clone(), Color32::WHITE);
                     }
                 } else {
-                    // No selection at all
-                    painter.text(
-                        text_pos,
-                        egui::Align2::LEFT_TOP,
-                        line,
-                        font_id.clone(),
-                        Color32::WHITE,
-                    );
+                    painter.text(text_pos, egui::Align2::LEFT_TOP, line, font_id.clone(), Color32::WHITE);
                 }
             }
-
-            // Draw cursor if on this line
+    
+            //  Draw Cursor
             if self.state.cursor_pos.line == line_idx {
-                let cursor_x =
-                    rect.left() + margin_width + self.state.cursor_pos.column as f32 * char_width;
-                let cursor_y = y_pos;
-
+                let cx = rect.left() + margin_width + (self.state.cursor_pos.column as f32 * char_width);
                 painter.line_segment(
-                    [
-                        Pos2::new(cursor_x, cursor_y),
-                        Pos2::new(cursor_x, cursor_y + row_height),
-                    ],
-                    Stroke::new(2.0, Color32::YELLOW),
+                    [Pos2::new(cx, y_pos), Pos2::new(cx, y_pos + row_height)],
+                    Stroke::new(2.0, Color32::YELLOW)
                 );
             }
-        }
-
-        // Handle scrolling with mouse wheel
-        let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
-        if scroll_delta != 0.0 {
-            let lines_to_scroll = (-scroll_delta / row_height) as isize;
-            self.state.scroll_offset.0 = (self.state.scroll_offset.0 as isize + lines_to_scroll)
-                .max(0)
-                .min(self.state.current_buffer().lines.len() as isize - 1)
-                as usize;
         }
     }
 }

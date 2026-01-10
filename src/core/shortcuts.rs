@@ -17,8 +17,8 @@ impl Shortcuts {
         }
     }
 
-    /// THE ONE PLACE TO CHANGE SHORTCUTS
-    /// Format: (KeyCode, Modifiers, Action, Description)
+    // THE ONE PLACE TO CHANGE SHORTCUTS
+    // Format: (KeyCode, Modifiers, Action, Description)
     fn get_mappings() -> Vec<(KeyCode, KeyModifiers, Action, &'static str)> {
         vec![
             (KeyCode::Left, KeyModifiers::empty(), Action::Left, "Move caret left"),

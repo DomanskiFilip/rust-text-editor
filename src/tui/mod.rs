@@ -29,7 +29,7 @@ impl TerminalEditor {
         }
     }
 
-    /// Open editor with a file (opens in new tab 1, shifts others down)
+    // Open editor with a file (opens in new tab 1, shifts others down)
     pub fn new_with_file(path: &str) -> Result<Self, std::io::Error> {
         // Load session first
         let mut tab_manager = TabManager::new(Buffer::default(), None);

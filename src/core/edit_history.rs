@@ -161,7 +161,7 @@ impl EditHistory {
         }
     }
     
-    /// Get the next operation to undo
+    // Get the next operation to undo
     pub fn undo(&mut self) -> Option<EditOperation> {
         if let Some(operation) = self.undo_stack.pop() {
             self.redo_stack.push(operation.clone());

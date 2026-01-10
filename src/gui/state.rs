@@ -6,8 +6,6 @@ use crate::core::{
     tabs::TabManager,
 };
 
-/// Adapter between core logic and GUI
-/// This bridges your TUI-based logic to work with egui
 pub struct EditorState {
     pub tab_manager: TabManager,
     pub selection: Option<Selection>,
@@ -73,7 +71,7 @@ impl EditorState {
         self.tab_manager.current_tab_mut().filename = Some(filename);
     }
 
-    /// Insert text at cursor position
+    // Insert text at cursor position
     pub fn insert_text(&mut self, text: &str) {
         let pos = self.cursor_pos;
         let buffer = self.current_buffer_mut();
@@ -121,8 +119,33 @@ impl EditorState {
 
         self.mark_dirty();
     }
+    
+    pub fn move_cursor(&mut self, dx: isize, dy: isize) {
+        // Get limits first as plain integers
+        let line_count = self.current_buffer().lines.len();
+        
+        // Perform calculations using those integers
+        let mut new_line = self.cursor_pos.line as isize + dy;
+        new_line = new_line.clamp(0, line_count.saturating_sub(1) as isize);
+        
+        self.cursor_pos.line = new_line as usize;
+    
+        // Get the new line's length
+        let line_len = self.current_buffer().lines[self.cursor_pos.line].len();
+        let mut new_col = self.cursor_pos.column as isize + dx;
+        new_col = new_col.clamp(0, line_len as isize);
+        
+        self.cursor_pos.column = new_col as usize;
+    }
+    
+    pub fn clamp_cursor(&mut self) {
+        let line_count = self.current_buffer().lines.len();
+        self.cursor_pos.line = self.cursor_pos.line.min(line_count.saturating_sub(1));
+        let line_len = self.current_buffer().lines[self.cursor_pos.line].len();
+        self.cursor_pos.column = self.cursor_pos.column.min(line_len);
+    }
 
-    /// Delete selection or character at cursor
+    // Delete selection or character at cursor
     pub fn delete_at_cursor(&mut self) {
         if let Some(selection) = self.selection.take() {
             self.delete_selection(selection);
@@ -134,13 +157,14 @@ impl EditorState {
                 let line = &mut buffer.lines[pos.line];
                 if pos.column < line.len() {
                     line.remove(pos.column);
+                    self.clamp_cursor();
                     self.mark_dirty();
                 }
             }
         }
     }
 
-    /// Backspace - delete character before cursor
+    // Backspace - delete character before cursor
     pub fn backspace(&mut self) {
         if let Some(selection) = self.selection.take() {
             self.delete_selection(selection);
@@ -167,6 +191,7 @@ impl EditorState {
                 line: self.cursor_pos.line - 1,
                 column: prev_line_len,
             };
+            self.clamp_cursor();
             self.mark_dirty();
         }
     }
@@ -208,7 +233,7 @@ impl EditorState {
         self.mark_dirty();
     }
 
-    /// Save current file
+    // Save current file
     pub fn save(&mut self) -> Result<(), std::io::Error> {
         if let Some(filename) = self.current_filename() {
             let filename = filename.to_string();
@@ -217,7 +242,7 @@ impl EditorState {
         Ok(())
     }
 
-    /// Save as new file
+    // Save as new file
     pub fn save_as(&mut self, path: &str) -> Result<(), std::io::Error> {
         use std::fs;
 
@@ -240,7 +265,7 @@ impl EditorState {
         Ok(())
     }
 
-    /// Copy selection to clipboard
+    // Copy selection to clipboard
     pub fn copy_selection(&self) {
         if let Some(ref selection) = self.selection {
             if !selection.is_active() {
@@ -256,7 +281,7 @@ impl EditorState {
         }
     }
 
-    /// Cut selection to clipboard
+    // Cut selection to clipboard
     pub fn cut_selection(&mut self) {
         self.copy_selection();
         if let Some(selection) = self.selection.take() {
@@ -266,7 +291,7 @@ impl EditorState {
         }
     }
 
-    /// Paste from clipboard
+    // Paste from clipboard
     pub fn paste_from_clipboard(&mut self) {
         // Delete selection first if active
         if let Some(selection) = self.selection.take() {
@@ -282,7 +307,7 @@ impl EditorState {
         }
     }
 
-    /// Select all text
+    // Select all text
     pub fn select_all(&mut self) {
         let last_line = self
             .current_buffer()
