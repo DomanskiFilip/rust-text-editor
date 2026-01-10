@@ -7,7 +7,6 @@ edition = "2021"
 # Existing TUI dependencies
 crossterm = "0.29"
 arboard = "3.4"
-clipboard = "0.5"
 
 # GUI dependencies
 eframe = { version = "0.33", default-features = false, features = [

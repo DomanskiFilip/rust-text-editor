@@ -15,6 +15,7 @@ pub struct TerminalEditor {
     caret: Caret,
     shortcuts: Shortcuts,
     quit_program: bool,
+    pub start_on_tab_zero: bool,
 }
 
 impl TerminalEditor {
@@ -25,6 +26,7 @@ impl TerminalEditor {
             caret: Caret::new(),
             shortcuts: Shortcuts::new(),
             quit_program: false,
+            start_on_tab_zero: true,
         }
     }
 
@@ -41,9 +43,19 @@ impl TerminalEditor {
             caret: Caret::new(),
             shortcuts: Shortcuts::new(),
             quit_program: false,
+            start_on_tab_zero: false,
         })
     }
-
+    
+    pub fn open_file_in_new_tab(&mut self) -> Result<(), std::io::Error> {
+        self.sync_tab_to_view();
+        self.tab_manager.new_tab();
+        self.sync_view_to_tab();
+        self.caret.move_to(caret::Position::default())?;
+        self.view.render(&mut self.caret)?;
+        Ok(())
+    }
+    
     pub fn set_filename(&mut self, filename: String) {
         self.tab_manager.current_tab_mut().filename = Some(filename.clone());
         self.view.set_filename(filename);
@@ -54,6 +66,14 @@ impl TerminalEditor {
             eprintln!("Terminal Initialisation Failed: {:?}", error);
         }
 
+        // Create a new tab at start if quick started without a path
+        if self.start_on_tab_zero {
+            let _ = match self.open_file_in_new_tab() {
+                Ok(_) => Ok(()),
+                Err(e) => Err(e),
+            };
+        }
+        
         self.sync_view_to_tab();
         self.caret
             .move_to(self.tab_manager.current_tab().cursor_pos)
@@ -188,25 +208,44 @@ impl TerminalEditor {
                                 }
 
                                 Action::Search => self.view.search(&mut self.caret)?,
-                                Action::Copy => self.view.copy_selection()?,
-
-                                Action::Paste => {
-                                    if let Some(op) =
-                                        self.view.paste_from_clipboard(&mut self.caret)?
-                                    {
-                                        self.tab_manager.current_tab_mut().edit_history.push(op);
-                                        self.tab_manager.current_tab_mut().has_unsaved_changes =
-                                            true;
-                                    }
-                                }
-
-                                Action::Cut => {
-                                    if let Some(op) = self.view.cut_selection(&mut self.caret)? {
-                                        self.tab_manager.current_tab_mut().edit_history.push(op);
-                                        self.tab_manager.current_tab_mut().has_unsaved_changes =
-                                            true;
-                                    }
-                                }
+                                Action::Copy => {
+                                     if let Err(e) = self.view.copy_selection() {
+                                         self.view.show_prompt(crate::tui::view::PromptKind::Error, e.to_string());
+                                     } else {
+                                         self.view.show_prompt(crate::tui::view::PromptKind::Error, "Copied!".into());
+                                     }
+                                 }
+                                 Action::Cut => {
+                                     match self.view.cut_selection(&mut self.caret) {
+                                         Ok(Some(op)) => {
+                                
+                                             let tab = self.tab_manager.current_tab_mut();
+                                
+                                             tab.edit_history.push(op);
+                                
+                                             tab.has_unsaved_changes = true;
+                                         }
+                                
+                                         Err(e) => self.view.show_prompt(crate::tui::view::PromptKind::Error, e.to_string()),
+                                         _ => {}
+                                     }
+                                 }
+                                 Action::Paste => {
+                                     match self.view.paste_from_clipboard(&mut self.caret) {
+                                
+                                         Ok(ops) => {
+                                
+                                             let tab = self.tab_manager.current_tab_mut();
+                                
+                                             if let Some(op) = ops {
+                                                 tab.edit_history.push(op);
+                                                 tab.has_unsaved_changes = true;
+                                             }
+                                         }
+                                         Err(e) => self.view.show_prompt(crate::tui::view::PromptKind::Error, e.to_string()),
+                                     }
+                                 }
+                                        
 
                                 Action::Left => self.view.move_left(&mut self.caret)?,
                                 Action::Right => self.view.move_right(&mut self.caret)?,

@@ -41,6 +41,8 @@ pub struct View {
     pub needs_redraw: bool,
     pub search_state: Option<SearchState>,
     pub(in crate::tui) prompt: Option<Prompt>,
+    #[allow(dead_code)] // clipboard for wayland must be here even tho rust warns its unused - its not!
+    clipboard: Option<arboard::Clipboard>,
 }
 
 impl View {
@@ -56,6 +58,7 @@ impl View {
             prompt: None,
             needs_redraw: true,
             search_state: None,
+            clipboard: arboard::Clipboard::new().ok(),
         }
     }
 
@@ -393,6 +396,7 @@ impl Default for View {
             prompt: None,
             needs_redraw: true,
             search_state: None,
+            clipboard: arboard::Clipboard::new().ok(),
         }
     }
 }

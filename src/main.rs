@@ -31,6 +31,7 @@ fn main() {
                 .map(|p| p.to_string_lossy().into_owned())
                 .unwrap_or_else(|_| raw_path.clone());
             
+            // open editor with selected file
             match tui::TerminalEditor::new_with_file(&path) {
                 Ok(mut ed) => {
                     ed.set_filename(path);
@@ -39,10 +40,12 @@ fn main() {
                 Err(e) => {
                     eprintln!("Error opening file {}: {}", path, e);
                     eprintln!("Starting with empty editor instead");
+                    // open empty editor on error
                     tui::TerminalEditor::new(core::buffer::Buffer::default())
                 }
             }
         } else {
+            // Default to empty editor if no file specified
             tui::TerminalEditor::new(core::buffer::Buffer::default())
         };
         

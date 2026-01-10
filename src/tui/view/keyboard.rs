@@ -73,8 +73,7 @@ pub fn type_character(
 
 pub fn insert_newline(
     view: &mut View,
-    caret: &mut Caret,
-) -> Result<Option<EditOperation>, Error> {
+    caret: &mut Caret,) -> Result<Option<EditOperation>, Error> {
     // Delete selection first if it exists
     if view.selection.is_some() && view.selection.as_ref().unwrap().is_active() {
         super::clipboard::delete_selection(view, caret)?;
@@ -126,10 +125,7 @@ pub fn insert_newline(
     Ok(Some(operation))
 }
 
-pub fn delete_char(
-    view: &mut View,
-    caret: &mut Caret,
-) -> Result<Option<EditOperation>, Error> {
+pub fn delete_char(view: &mut View, caret: &mut Caret,) -> Result<Option<EditOperation>, Error> {
     if view.selection.is_some() && view.selection.as_ref().unwrap().is_active() {
         return super::clipboard::delete_selection(view, caret);
     }
@@ -187,10 +183,7 @@ pub fn delete_char(
     }
 }
 
-pub fn backspace(
-    view: &mut View,
-    caret: &mut Caret,
-) -> Result<Option<EditOperation>, Error> {
+pub fn backspace(view: &mut View, caret: &mut Caret,) -> Result<Option<EditOperation>, Error> {
     if view.selection.is_some() && view.selection.as_ref().unwrap().is_active() {
         return super::clipboard::delete_selection(view, caret);
     }
