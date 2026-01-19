@@ -1,5 +1,6 @@
 // keyboard logic with edit tracking for undo/redo
 use super::View;
+use super::graphemes::*;
 use crate::tui::{
     terminal::Terminal, 
     caret::{Caret, Position}
@@ -7,12 +8,8 @@ use crate::tui::{
 use crate::core::edit_history::{Edit, EditOperation};
 use std::io::Error;
 
-pub fn type_character(
-    view: &mut View,
-    character: char,
-    caret: &mut Caret,
-) -> Result<Option<EditOperation>, Error> {
-    // Delete selection first if it exists, then type
+pub fn type_character(view: &mut View, character: char, caret: &mut Caret) -> Result<Option<EditOperation>, Error> {    
+    // Delete selection first if it exists
     if view.selection.is_some() && view.selection.as_ref().unwrap().is_active() {
         super::clipboard::delete_selection(view, caret)?;
     }
@@ -20,7 +17,6 @@ pub fn type_character(
     let size = Terminal::get_size()?;
     let position = caret.get_position();
     
-    // Don't allow typing in footer
     if position.y >= size.height - 1 {
         return Ok(None);
     }
@@ -28,7 +24,6 @@ pub fn type_character(
     let buffer_line_idx = (position.y.saturating_sub(Position::HEADER)) as usize + view.scroll_offset;
     let char_pos = (position.x as usize).saturating_sub(Position::MARGIN as usize);
     
-    // Capture state before edit
     let cursor_before = position;
     let scroll_before = view.scroll_offset;
 
@@ -42,39 +37,32 @@ pub fn type_character(
         return type_character(view, character, caret);
     }
 
-    // Insert the character
+    // Insert the character at grapheme position
     let line = &mut view.buffer.lines[buffer_line_idx];
-    if char_pos <= line.len() {
-        line.insert(char_pos, character);
-    } else {
-        line.push(character);
-    }
+    let grapheme_count = grapheme_len(line);
+    let grapheme_pos = char_pos.min(grapheme_count);
+    
+    insert_at_grapheme(line, grapheme_pos, &character.to_string());
 
     view.render(caret)?;
     
     let new_offset = caret.move_right(view.scroll_offset, view.buffer.lines.len())?;
     view.scroll_offset = new_offset;
     
-    // Create edit operation
-    let operation = EditOperation {
+    Ok(Some(EditOperation {
         edit: Edit::InsertText {
             line: buffer_line_idx,
-            column: char_pos,
+            column: grapheme_pos,
             text: character.to_string(),
         },
         cursor_before,
         cursor_after: caret.get_position(),
         scroll_before,
         scroll_after: view.scroll_offset,
-    };
-    
-    Ok(Some(operation))
+    }))
 }
 
-pub fn insert_newline(
-    view: &mut View,
-    caret: &mut Caret,) -> Result<Option<EditOperation>, Error> {
-    // Delete selection first if it exists
+pub fn insert_newline(view: &mut View, caret: &mut Caret) -> Result<Option<EditOperation>, Error> {
     if view.selection.is_some() && view.selection.as_ref().unwrap().is_active() {
         super::clipboard::delete_selection(view, caret)?;
     }
@@ -96,22 +84,35 @@ pub fn insert_newline(
         view.buffer.lines.push(String::new());
     }
     
-    // Split the current line
-    let current_line = &mut view.buffer.lines[buffer_line_idx];
-    let remaining_text = if char_pos < current_line.len() {
-        current_line.split_off(char_pos)
-    } else {
-        String::new()
-    };
+    // Split at grapheme position
+    let current_line = &view.buffer.lines[buffer_line_idx];
+    let grapheme_count = grapheme_len(current_line);
+    let grapheme_pos = char_pos.min(grapheme_count);
     
+    let (before, remaining) = split_at_grapheme(current_line, grapheme_pos);
+    let remaining_text = remaining.to_string();
+    
+    // Update current line to only contain text before split
+    view.buffer.lines[buffer_line_idx] = before.to_string();
+    
+    // Insert new line with remaining text
     view.buffer.lines.insert(buffer_line_idx + 1, remaining_text.clone());
     
+    // Render first, then move cursor
     view.render(caret)?;
-    view.scroll_offset = caret.move_down(view.scroll_offset, view.buffer.lines.len())?;
-    view.render(caret)?;
-    caret.next_line()?;
     
-    let operation = EditOperation {
+    // Check if we need to scroll
+    if position.y < size.height - 2 {
+        // Room to move down on screen
+        caret.next_line()?;
+    } else {
+        // Need to scroll
+        view.scroll_offset += 1;
+        view.render(caret)?;
+        caret.next_line()?;
+    }
+    
+    Ok(Some(EditOperation {
         edit: Edit::InsertLine {
             line: buffer_line_idx,
             remaining_text,
@@ -120,12 +121,10 @@ pub fn insert_newline(
         cursor_after: caret.get_position(),
         scroll_before,
         scroll_after: view.scroll_offset,
-    };
-    
-    Ok(Some(operation))
+    }))
 }
 
-pub fn delete_char(view: &mut View, caret: &mut Caret,) -> Result<Option<EditOperation>, Error> {
+pub fn delete_char(view: &mut View, caret: &mut Caret) -> Result<Option<EditOperation>, Error> {
     if view.selection.is_some() && view.selection.as_ref().unwrap().is_active() {
         return super::clipboard::delete_selection(view, caret);
     }
@@ -141,11 +140,12 @@ pub fn delete_char(view: &mut View, caret: &mut Caret,) -> Result<Option<EditOpe
         return Ok(None);
     }
     
-    let line_len = view.buffer.lines[buffer_line_idx].len();
+    let line = &mut view.buffer.lines[buffer_line_idx];
+    let grapheme_count = grapheme_len(line);
     
-    if char_pos < line_len {
-        // Delete character at cursor
-        let deleted_char = view.buffer.lines[buffer_line_idx].remove(char_pos);
+    if char_pos < grapheme_count {
+        // Delete grapheme at cursor
+        let deleted = remove_grapheme_at(line, char_pos).unwrap_or_default();
         view.render(caret)?;
         caret.move_to(pos)?;
         
@@ -153,7 +153,7 @@ pub fn delete_char(view: &mut View, caret: &mut Caret,) -> Result<Option<EditOpe
             edit: Edit::DeleteText {
                 line: buffer_line_idx,
                 column: char_pos,
-                text: deleted_char.to_string(),
+                text: deleted,
             },
             cursor_before,
             cursor_after: pos,
@@ -163,7 +163,7 @@ pub fn delete_char(view: &mut View, caret: &mut Caret,) -> Result<Option<EditOpe
     } else if buffer_line_idx + 1 < view.buffer.lines.len() {
         // At end of line, merge with next line
         let next_line = view.buffer.lines.remove(buffer_line_idx + 1);
-        let first_line_end = view.buffer.lines[buffer_line_idx].len();
+        let first_line_end = grapheme_len(&view.buffer.lines[buffer_line_idx]);
         view.buffer.lines[buffer_line_idx].push_str(&next_line);
         view.render(caret)?;
         caret.move_to(pos)?;
@@ -183,7 +183,7 @@ pub fn delete_char(view: &mut View, caret: &mut Caret,) -> Result<Option<EditOpe
     }
 }
 
-pub fn backspace(view: &mut View, caret: &mut Caret,) -> Result<Option<EditOperation>, Error> {
+pub fn backspace(view: &mut View, caret: &mut Caret) -> Result<Option<EditOperation>, Error> {
     if view.selection.is_some() && view.selection.as_ref().unwrap().is_active() {
         return super::clipboard::delete_selection(view, caret);
     }
@@ -196,10 +196,11 @@ pub fn backspace(view: &mut View, caret: &mut Caret,) -> Result<Option<EditOpera
     let char_pos = (pos.x as usize).saturating_sub(Position::MARGIN as usize);
     
     if char_pos > 0 {
-        // Delete character before cursor
+        // Delete grapheme before cursor
         if let Some(line) = view.buffer.lines.get_mut(buffer_line_idx) {
-            if char_pos <= line.len() {
-                let deleted_char = line.remove(char_pos - 1);
+            let grapheme_count = grapheme_len(line);
+            if char_pos <= grapheme_count {
+                let deleted = remove_grapheme_at(line, char_pos - 1).unwrap_or_default();
                 view.render(caret)?;
                 let new_offset = caret.move_left(view.scroll_offset)?;
                 view.scroll_offset = new_offset;
@@ -208,7 +209,7 @@ pub fn backspace(view: &mut View, caret: &mut Caret,) -> Result<Option<EditOpera
                     edit: Edit::DeleteText {
                         line: buffer_line_idx,
                         column: char_pos - 1,
-                        text: deleted_char.to_string(),
+                        text: deleted,
                     },
                     cursor_before,
                     cursor_after: caret.get_position(),
@@ -219,7 +220,7 @@ pub fn backspace(view: &mut View, caret: &mut Caret,) -> Result<Option<EditOpera
         }
     } else if buffer_line_idx > 0 {
         // At beginning of line, merge with previous line
-        let prev_line_len = view.buffer.lines[buffer_line_idx - 1].len();
+        let prev_line_len = grapheme_len(&view.buffer.lines[buffer_line_idx - 1]);
         let current_line_content = view.buffer.lines[buffer_line_idx].clone();
         
         view.buffer.lines[buffer_line_idx - 1].push_str(&current_line_content);

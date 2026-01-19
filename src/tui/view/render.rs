@@ -1,5 +1,7 @@
 // render module responsible for all the render logic
 use super::View;
+use super::graphemes::*;
+use unicode_segmentation::UnicodeSegmentation; 
 use crate::core::selection::TextPosition;
 use crate::tui::{
     caret::{Caret, Position},
@@ -20,10 +22,8 @@ pub fn render_view(view: &View, caret: &Caret, is_dirty: bool) -> Result<(), Err
 
     draw_header()?;
 
-    // Visible rows = Total height - Header - Footer
     let visible_rows = (size.height.saturating_sub(Position::HEADER + 1)) as usize;
 
-    // Find last line with text for dynamic margin
     let last_non_empty_line = view
         .buffer
         .lines
@@ -31,7 +31,6 @@ pub fn render_view(view: &View, caret: &Caret, is_dirty: bool) -> Result<(), Err
         .rposition(|line| !line.is_empty())
         .unwrap_or(0);
 
-    // Get selection range if active
     let selection_range = view
         .selection
         .as_ref()
@@ -51,19 +50,26 @@ pub fn render_view(view: &View, caret: &Caret, is_dirty: bool) -> Result<(), Err
 
         if let Some(line) = view.buffer.lines.get(buffer_line_idx) {
             let max_width = (size.width.saturating_sub(Position::MARGIN)) as usize;
-            let truncated_line = if line.len() > max_width {
-                &line[..max_width]
-            } else {
-                line
-            };
+            
+            // Truncate by visual width, not grapheme count
+            let mut truncated = String::new();
+            let mut current_width = 0;
+            
+            for grapheme in line.graphemes(true) {
+                let g_width = visual_width(grapheme);
+                if current_width + g_width > max_width {
+                    break;
+                }
+                truncated.push_str(grapheme);
+                current_width += g_width;
+            }
 
-            render_line_with_selection(truncated_line, buffer_line_idx, selection_range)?;
+            render_line_with_selection(&truncated, buffer_line_idx, selection_range)?;
         }
     }
 
     draw_footer(view, caret, is_dirty)?;
 
-    // Restore cursor position
     queue!(stdout(), MoveTo(current_pos.x, current_pos.y))?;
     Ok(())
 }

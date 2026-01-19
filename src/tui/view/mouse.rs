@@ -6,6 +6,7 @@ use super::{
 use crate::tui::caret::{Caret, Position};
 use crate::core::selection::{Selection, TextPosition};
 use std::io::Error;
+use super::graphemes::*;
 
 pub fn handle_down(view: &mut View, screen_x: u16, screen_y: u16, caret: &mut Caret) -> Result<(), Error> {
     let pos = screen_to_text_pos(view, screen_x, screen_y)?;
@@ -96,26 +97,45 @@ pub fn handle_triple_click(view: &mut View, screen_x: u16, screen_y: u16, caret:
 }
 
 fn find_word_boundaries(line: &str, col: usize) -> (usize, usize) {
-    let chars: Vec<char> = line.chars().collect();
+    let grapheme_count = grapheme_len(line);
     
-    if col >= chars.len() || chars.is_empty() {
+    if col >= grapheme_count || grapheme_count == 0 {
         return (col, col);
     }
     
-    let is_word_char = |c: char| c.is_alphanumeric() || c == '_';
+    let is_word_char = |g: &str| {
+        g.chars().all(|c| c.is_alphanumeric() || c == '_')
+    };
     
-    if !is_word_char(chars[col]) {
+    let current = grapheme_at(line, col).unwrap_or("");
+    if !is_word_char(current) {
         return (col, col + 1);
     }
     
     let mut start = col;
-    while start > 0 && is_word_char(chars[start - 1]) {
-        start -= 1;
+    while start > 0 {
+        if let Some(g) = grapheme_at(line, start - 1) {
+            if is_word_char(g) {
+                start -= 1;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
     }
     
     let mut end = col;
-    while end < chars.len() && is_word_char(chars[end]) {
-        end += 1;
+    while end < grapheme_count {
+        if let Some(g) = grapheme_at(line, end) {
+            if is_word_char(g) {
+                end += 1;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
     }
     
     (start, end)

@@ -7,7 +7,6 @@ pub struct QuickNotepadApp {
     show_shortcuts: bool,
     show_save_dialog: bool,
     save_filename: String,
-    // Flag to prevent text input when dialogs are open
     dialog_has_focus: bool,
 }
 
@@ -24,7 +23,6 @@ impl QuickNotepadApp {
 
     fn menu_bar(&mut self, ctx: &Context) {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
-            // Updated to the modern non-deprecated builder pattern
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("📄 New (Ctrl+N)").clicked() {
@@ -122,7 +120,6 @@ impl QuickNotepadApp {
     fn status_bar(&mut self, ctx: &Context) {
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                // Left side - filename
                 let filename = self.state.current_filename().unwrap_or("[No Name]");
                 let dirty = if self.state.has_unsaved_changes() {
                     "*"
@@ -133,7 +130,6 @@ impl QuickNotepadApp {
 
                 ui.separator();
 
-                // Position
                 ui.label(format!(
                     "Ln {}, Col {}",
                     self.state.cursor_pos.line + 1,
@@ -144,7 +140,6 @@ impl QuickNotepadApp {
                     ui.label("© Filip Domanski");
                     ui.separator();
 
-                    // Line count
                     let line_count = self
                         .state
                         .current_buffer()
@@ -164,70 +159,73 @@ impl QuickNotepadApp {
             return;
         }
 
-        // File operations
-        if ctx.input(|i| i.key_pressed(egui::Key::S) && i.modifiers.ctrl) {
-            if self.state.current_filename().is_some() {
-                let _ = self.state.save();
-            } else {
-                self.show_save_dialog = true;
+        // Use consume_shortcut to properly consume events and prevent them from reaching editor
+        ctx.input_mut(|i| {
+            // File operations
+            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::S)) {
+                if self.state.current_filename().is_some() {
+                    let _ = self.state.save();
+                } else {
+                    self.show_save_dialog = true;
+                    self.dialog_has_focus = true;
+                }
+            }
+
+            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::N)) {
+                self.state.tab_manager.new_tab();
+            }
+
+            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Q)) {
+                ctx.send_viewport_cmd(ViewportCommand::Close);
+            }
+
+            // Edit operations - use the same logic as menu buttons
+            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Z)) {
+                if let Some(op) = self.state.current_edit_history().undo() {
+                    op.edit.reverse(&mut self.state.current_buffer_mut().lines);
+                }
+            }
+
+            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Y)) {
+                if let Some(op) = self.state.current_edit_history().redo() {
+                    op.edit.apply(&mut self.state.current_buffer_mut().lines);
+                }
+            }
+
+            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::C)) {
+                self.state.copy_selection();
+            }
+
+            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::X)) {
+                self.state.cut_selection();
+            }
+
+            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::V)) {
+                self.state.paste_from_clipboard();
+            }
+
+            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::F)) {
+                self.state.search_active = true;
                 self.dialog_has_focus = true;
             }
-        }
 
-        if ctx.input(|i| i.key_pressed(egui::Key::N) && i.modifiers.ctrl) {
-            self.state.tab_manager.new_tab();
-        }
-
-        if ctx.input(|i| i.key_pressed(egui::Key::Q) && i.modifiers.ctrl) {
-            ctx.send_viewport_cmd(ViewportCommand::Close);
-        }
-
-        // Edit operations
-        if ctx.input(|i| i.key_pressed(egui::Key::Z) && i.modifiers.ctrl) {
-            if let Some(op) = self.state.current_edit_history().undo() {
-                op.edit.reverse(&mut self.state.current_buffer_mut().lines);
+            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::A)) {
+                self.state.select_all();
             }
-        }
 
-        if ctx.input(|i| i.key_pressed(egui::Key::Y) && i.modifiers.ctrl) {
-            if let Some(op) = self.state.current_edit_history().redo() {
-                op.edit.apply(&mut self.state.current_buffer_mut().lines);
-            }
-        }
-
-        if ctx.input(|i| i.key_pressed(egui::Key::F) && i.modifiers.ctrl) {
-            self.state.search_active = true;
-            self.dialog_has_focus = true;
-        }
-
-        if ctx.input(|i| i.key_pressed(egui::Key::A) && i.modifiers.ctrl) {
-            self.state.select_all();
-        }
-
-        if ctx.input(|i| i.key_pressed(egui::Key::C) && i.modifiers.ctrl) {
-            self.state.copy_selection();
-        }
-
-        if ctx.input(|i| i.key_pressed(egui::Key::X) && i.modifiers.ctrl) {
-            self.state.cut_selection();
-        }
-
-        if ctx.input(|i| i.key_pressed(egui::Key::V) && i.modifiers.ctrl) {
-            self.state.paste_from_clipboard();
-        }
-
-        for i in 1..=9 {
-            if ctx.input(|input| {
-                input.key_pressed(match i {
+            // Tab switching - Ctrl+1-9
+            for num in 1..=9 {
+                let key = match num {
                     1 => egui::Key::Num1, 2 => egui::Key::Num2, 3 => egui::Key::Num3,
                     4 => egui::Key::Num4, 5 => egui::Key::Num5, 6 => egui::Key::Num6,
                     7 => egui::Key::Num7, 8 => egui::Key::Num8, 9 => egui::Key::Num9,
                     _ => egui::Key::Num0,
-                }) && input.modifiers.ctrl
-            }) {
-                let _ = self.state.tab_manager.switch_to_tab(i);
+                };
+                if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, key)) {
+                    let _ = self.state.tab_manager.switch_to_tab(num);
+                }
             }
-        }
+        });
     }
 
     fn show_save_dialog(&mut self, ctx: &Context) {
@@ -292,10 +290,17 @@ impl QuickNotepadApp {
                         ui.end_row();
 
                         let shortcuts = vec![
-                            ("New", "Ctrl+N"), ("Save", "Ctrl+S"), ("Quit", "Ctrl+Q"),
-                            ("Undo", "Ctrl+Z"), ("Redo", "Ctrl+Y"), ("Copy", "Ctrl+C"),
-                            ("Cut", "Ctrl+X"), ("Paste", "Ctrl+V"), ("Find", "Ctrl+F"),
-                            ("Select All", "Ctrl+A"), ("Switch Tab", "Ctrl+1-9"),
+                            ("New", "Ctrl+N"),
+                            ("Save", "Ctrl+S"),
+                            ("Quit", "Ctrl+Q"),
+                            ("Undo", "Ctrl+Z"),
+                            ("Redo", "Ctrl+Y"),
+                            ("Copy", "Ctrl+C"),
+                            ("Cut", "Ctrl+X"),
+                            ("Paste", "Ctrl+V"),
+                            ("Find", "Ctrl+F"),
+                            ("Select All", "Ctrl+A"),
+                            ("Switch Tab", "Ctrl+1-9"),
                         ];
 
                         for (action, shortcut) in shortcuts {

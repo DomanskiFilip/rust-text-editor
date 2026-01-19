@@ -1,5 +1,6 @@
 // clipboard module with EditOperation tracking
 use super::View;
+use super::graphemes::*;
 use crate::tui::caret::{Caret, Position};
 use crate::tui::terminal::Terminal;
 use crate::core::selection::TextPosition;
@@ -99,26 +100,28 @@ fn extract_text(view: &View, start: TextPosition, end: TextPosition) -> String {
     if start.line == end.line {
         // Single line selection
         if let Some(line) = view.buffer.lines.get(start.line) {
-            let chars: Vec<char> = line.chars().collect();
-            let text: String = chars[start.column.min(chars.len())..end.column.min(chars.len())]
-                .iter()
-                .collect();
+            let grapheme_count = grapheme_len(line);
+            let text = grapheme_slice(
+                line,
+                start.column.min(grapheme_count),
+                end.column.min(grapheme_count)
+            );
             result.push_str(&text);
         }
     } else {
         // Multi-line selection
         for line_idx in start.line..=end.line {
             if let Some(line) = view.buffer.lines.get(line_idx) {
-                let chars: Vec<char> = line.chars().collect();
+                let grapheme_count = grapheme_len(line);
                 
                 if line_idx == start.line {
                     // First line: from start.column to end
-                    let text: String = chars[start.column.min(chars.len())..].iter().collect();
+                    let text = grapheme_slice(line, start.column.min(grapheme_count), grapheme_count);
                     result.push_str(&text);
                     result.push('\n');
                 } else if line_idx == end.line {
                     // Last line: from beginning to end.column
-                    let text: String = chars[..end.column.min(chars.len())].iter().collect();
+                    let text = grapheme_slice(line, 0, end.column.min(grapheme_count));
                     result.push_str(&text);
                 } else {
                     // Middle lines: entire line
@@ -137,25 +140,28 @@ fn delete_range(view: &mut View, start: TextPosition, end: TextPosition) -> Resu
     if start.line == end.line {
         // Single line deletion
         if let Some(line) = view.buffer.lines.get_mut(start.line) {
-            let mut chars: Vec<char> = line.chars().collect();
-            chars.drain(start.column..end.column.min(chars.len()));
-            *line = chars.into_iter().collect();
+            let grapheme_count = grapheme_len(line);
+            let start_col = start.column.min(grapheme_count);
+            let end_col = end.column.min(grapheme_count);
+            
+            // Convert to byte indices and remove
+            let byte_start = grapheme_to_byte_idx(line, start_col);
+            let byte_end = grapheme_to_byte_idx(line, end_col);
+            line.drain(byte_start..byte_end);
         }
     } else {
         // Multi-line deletion
-        
         // Get the text before selection on first line
         let before_text = if let Some(line) = view.buffer.lines.get(start.line) {
-            let chars: Vec<char> = line.chars().collect();
-            chars[..start.column.min(chars.len())].iter().collect::<String>()
+            grapheme_slice(line, 0, start.column.min(grapheme_len(line)))
         } else {
             String::new()
         };
         
         // Get the text after selection on last line
         let after_text = if let Some(line) = view.buffer.lines.get(end.line) {
-            let chars: Vec<char> = line.chars().collect();
-            chars[end.column.min(chars.len())..].iter().collect::<String>()
+            let grapheme_count = grapheme_len(line);
+            grapheme_slice(line, end.column.min(grapheme_count), grapheme_count)
         } else {
             String::new()
         };
@@ -179,6 +185,8 @@ fn delete_range(view: &mut View, start: TextPosition, end: TextPosition) -> Resu
 
 // Helper: Insert text at cursor position and return EditOperation
 fn insert_text_at_cursor(view: &mut View, caret: &mut Caret, text: &str) -> Result<Option<EditOperation>, Error> {
+    use crate::tui::caret::Position;
+    
     let pos = caret.get_position();
     let cursor_before = pos;
     let scroll_before = view.scroll_offset;
@@ -200,10 +208,14 @@ fn insert_text_at_cursor(view: &mut View, caret: &mut Caret, text: &str) -> Resu
             return Ok(None);
         }
         
-        // Split current line at cursor
-        let current_line = view.buffer.lines[buffer_line_idx].clone();
-        let before: String = current_line.chars().take(char_pos).collect();
-        let after: String = current_line.chars().skip(char_pos).collect();
+        // Split current line at cursor (using grapheme position)
+        let current_line = &view.buffer.lines[buffer_line_idx];
+        let grapheme_count = grapheme_len(current_line);
+        let grapheme_pos = char_pos.min(grapheme_count);
+        
+        let (before, after) = split_at_grapheme(current_line, grapheme_pos);
+        let before = before.to_string();
+        let after = after.to_string();
         
         // Update first line: before + first pasted line
         view.buffer.lines[buffer_line_idx] = format!("{}{}", before, lines[0]);
@@ -225,9 +237,9 @@ fn insert_text_at_cursor(view: &mut View, caret: &mut Caret, text: &str) -> Resu
             insert_idx += 1;
         }
         
-        // Calculate final position
+        // Calculate final position (in graphemes)
         let final_buffer_line = buffer_line_idx + lines.len() - 1;
-        let final_buffer_col = lines[lines.len() - 1].len();
+        let final_buffer_col = grapheme_len(lines[lines.len() - 1]);
         
         // Update scroll_offset
         let size = Terminal::get_size()?;
@@ -252,9 +264,9 @@ fn insert_text_at_cursor(view: &mut View, caret: &mut Caret, text: &str) -> Resu
         Ok(Some(EditOperation {
             edit: Edit::ReplaceRange {
                 start_line: buffer_line_idx,
-                start_column: char_pos,
+                start_column: grapheme_pos,
                 end_line: buffer_line_idx,
-                end_column: char_pos,
+                end_column: grapheme_pos,
                 old_text: String::new(),
                 new_text: text.to_string(),
             },
@@ -266,25 +278,23 @@ fn insert_text_at_cursor(view: &mut View, caret: &mut Caret, text: &str) -> Resu
     } else {
         // Single line paste
         let line = &mut view.buffer.lines[buffer_line_idx];
+        let grapheme_count = grapheme_len(line);
+        let grapheme_pos = char_pos.min(grapheme_count);
         
-        if char_pos <= line.len() {
-            line.insert_str(char_pos, text);
-        } else {
-            line.push_str(&" ".repeat(char_pos - line.len()));
-            line.push_str(text);
-        }
+        insert_at_grapheme(line, grapheme_pos, text);
         
         view.render(caret)?;
         
         let size = Terminal::get_size()?;
-        let new_x = (pos.x + text.len() as u16).min(size.width.saturating_sub(1));
+        let text_grapheme_len = grapheme_len(text);
+        let new_x = (pos.x + text_grapheme_len as u16).min(size.width.saturating_sub(1));
         caret.move_to(Position { x: new_x, y: pos.y })?;
         
         // Create edit operation for single-line paste
         Ok(Some(EditOperation {
             edit: Edit::InsertText {
                 line: buffer_line_idx,
-                column: char_pos,
+                column: grapheme_pos,
                 text: text.to_string(),
             },
             cursor_before,

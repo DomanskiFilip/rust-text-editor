@@ -21,12 +21,10 @@ impl<'a> EditorPanel<'a> {
         let available_rect = ui.available_rect_before_wrap();
         let response = ui.allocate_rect(available_rect, Sense::click_and_drag());
 
-        // Handle input only if we should accept it (no dialogs open)
         if self.accepts_input {
             self.handle_input(ui, &response);
         }
 
-        // Render editor content
         self.render_content(ui, &response, available_rect);
 
         response
@@ -37,7 +35,6 @@ impl<'a> EditorPanel<'a> {
             ui.label("🔍");
             let response = ui.text_edit_singleline(&mut self.state.search_query);
 
-            // Request focus when search is activated
             response.request_focus();
 
             if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -70,9 +67,7 @@ impl<'a> EditorPanel<'a> {
         ui.input(|i| {
             for event in &i.events {
                 if let egui::Event::Text(text) = event {
-                    // Don't insert if Ctrl/Alt/Command is held (those are shortcuts)
                     if !i.modifiers.ctrl && !i.modifiers.alt && !i.modifiers.command {
-                        // Don't insert control characters
                         if !text.chars().any(|c| c.is_control()) {
                             self.state.insert_text(text);
                         }
@@ -81,7 +76,6 @@ impl<'a> EditorPanel<'a> {
             }
         });
 
-        // Handle special keys (only without Ctrl modifier, except for Ctrl+A which we handle in app.rs)
         let has_ctrl = ui.input(|i| i.modifiers.ctrl);
         let has_shift = ui.input(|i| i.modifiers.shift);
 
@@ -98,12 +92,10 @@ impl<'a> EditorPanel<'a> {
         }
 
         if ui.input(|i| i.key_pressed(egui::Key::Tab)) && !has_ctrl {
-            self.state.insert_text("    "); // 4 spaces
+            self.state.insert_text("    ");
         }
-        
-        
 
-        // Handle arrow keys with optional shift for selection
+        // Arrow keys with optional shift for selection
         if ui.input(|i| i.key_pressed(egui::Key::ArrowLeft)) && !has_ctrl {
             if has_shift {
                 self.move_cursor_with_selection(-1, 0);
@@ -136,7 +128,7 @@ impl<'a> EditorPanel<'a> {
             }
         }
 
-        // Handle Home/End
+        // Home/End
         if ui.input(|i| i.key_pressed(egui::Key::Home)) && !has_ctrl {
             if has_shift {
                 self.start_selection_if_needed();
@@ -167,7 +159,7 @@ impl<'a> EditorPanel<'a> {
             }
         }
 
-        // Handle Page Up/Down
+        // Page Up/Down
         if ui.input(|i| i.key_pressed(egui::Key::PageUp)) {
             if has_shift {
                 self.start_selection_if_needed();
@@ -191,7 +183,7 @@ impl<'a> EditorPanel<'a> {
             }
         }
 
-        // Handle mouse clicks and dragging for selection
+        // Mouse clicks and dragging
         if response.clicked() {
             if let Some(pos) = response.interact_pointer_pos() {
                 self.handle_click(ui, pos);
@@ -267,7 +259,7 @@ impl<'a> EditorPanel<'a> {
     fn handle_click(&mut self, ui: &Ui, pos: Pos2) {
         let text_pos = self.screen_pos_to_text_pos(ui, pos);
         self.state.cursor_pos = text_pos;
-        self.state.selection = None; // Clear selection on click
+        self.state.selection = None;
         self.state.is_dragging = true;
     }
 
@@ -278,12 +270,10 @@ impl<'a> EditorPanel<'a> {
 
         let text_pos = self.screen_pos_to_text_pos(ui, pos);
 
-        // Start selection if we don't have one
         if self.state.selection.is_none() {
             self.state.selection = Some(Selection::new(self.state.cursor_pos));
         }
 
-        // Update cursor and selection
         self.state.cursor_pos = text_pos;
         if let Some(ref mut sel) = self.state.selection {
             sel.update_cursor(text_pos);
@@ -291,18 +281,15 @@ impl<'a> EditorPanel<'a> {
     }
     
     fn screen_pos_to_text_pos(&self, ui: &Ui, pos: Pos2) -> TextPosition {
-        // Approximate font metrics for monospace font at 14.0 size
         let row_height = 20.0;
         let char_width = 8.4;
         let margin_width = 40.0;
 
         let rect = ui.available_rect_before_wrap();
 
-        // Calculate line and column from click position
         let line = ((pos.y - rect.top()) / row_height) as usize + self.state.scroll_offset.0;
         let column = ((pos.x - rect.left() - margin_width) / char_width).max(0.0) as usize;
 
-        // Clamp to valid positions
         let max_line = self.state.current_buffer().lines.len().saturating_sub(1);
         let line = line.min(max_line);
 
@@ -326,12 +313,11 @@ impl<'a> EditorPanel<'a> {
         let margin_width = 40.0;
         let scroll_line = self.state.scroll_offset.0;
     
-        //  Handle Mouse Interaction
+        // Handle Mouse Interaction
         if response.clicked() || response.dragged() {
             if let Some(mouse_pos) = response.interact_pointer_pos() {
                 let local_pos = mouse_pos - rect.min;
                 
-                // Get metadata using temporary borrows that drop immediately after this expression
                 let line_count = self.state.current_buffer().lines.len();
                 let clicked_line = ((local_pos.y / row_height) as usize + scroll_line)
                     .min(line_count.saturating_sub(1));
@@ -354,11 +340,11 @@ impl<'a> EditorPanel<'a> {
             }
         }
     
-        // Draw Text with Selection Highlight
+        // Draw content
         let visible_rows = (rect.height() / row_height) as usize + 1;
         let end_line = (scroll_line + visible_rows).min(self.state.current_buffer().lines.len());
     
-        // Draw line numbers margin background
+        // Draw margin background
         let margin_rect = Rect::from_min_size(rect.min, egui::Vec2::new(margin_width, rect.height()));
         painter.rect_filled(margin_rect, 0.0, Color32::from_rgb(38, 33, 28));
     
@@ -371,7 +357,7 @@ impl<'a> EditorPanel<'a> {
         for (visual_idx, line_idx) in (scroll_line..end_line).enumerate() {
             let y_pos = rect.top() + visual_idx as f32 * row_height;
     
-            // 1. Draw line number
+            // Line number
             painter.text(
                 Pos2::new(rect.left() + 5.0, y_pos),
                 egui::Align2::LEFT_TOP,
@@ -380,7 +366,7 @@ impl<'a> EditorPanel<'a> {
                 Color32::from_rgb(200, 160, 100),
             );
     
-            // Draw Text with Selection Highlight
+            // Line content with selection
             if let Some(line) = buffer.lines.get(line_idx) {
                 let text_pos = Pos2::new(rect.left() + margin_width, y_pos);
     
@@ -396,7 +382,7 @@ impl<'a> EditorPanel<'a> {
                             painter.text(text_pos, egui::Align2::LEFT_TOP, before, font_id.clone(), Color32::WHITE);
                         }
     
-                        // Selection highlight
+                        // Selection
                         if sel_start < chars.len() && sel_end > sel_start {
                             let selected: String = chars[sel_start..sel_end.min(chars.len())].iter().collect();
                             let sel_x = text_pos.x + sel_start as f32 * char_width;
@@ -421,7 +407,7 @@ impl<'a> EditorPanel<'a> {
                 }
             }
     
-            //  Draw Cursor
+            // Cursor
             if self.state.cursor_pos.line == line_idx {
                 let cx = rect.left() + margin_width + (self.state.cursor_pos.column as f32 * char_width);
                 painter.line_segment(

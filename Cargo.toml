@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Existing TUI dependencies
 crossterm = "0.29"
-arboard = "3.4"
+arboard = { version = "3.4", features = ["wayland-data-control"] }
+unicode-segmentation = "1.10"
+unicode-width = "0.2.2"
 
 # GUI dependencies
 eframe = { version = "0.33", default-features = false, features = [

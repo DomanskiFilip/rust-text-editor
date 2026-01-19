@@ -183,24 +183,40 @@ impl EditHistory {
 }
 
 impl Edit {
-    // Apply this edit to the buffer (for redo)
     pub fn apply(&self, buffer: &mut Vec<String>) {
+        use unicode_segmentation::UnicodeSegmentation;
+        
         match self {
             Edit::InsertText { line, column, text } => {
                 if let Some(line_content) = buffer.get_mut(*line) {
-                    let chars: Vec<char> = line_content.chars().collect();
-                    let mut new_chars = chars[..*column].to_vec();
-                    new_chars.extend(text.chars());
-                    new_chars.extend(&chars[*column..]);
-                    *line_content = new_chars.into_iter().collect();
+                    // Convert grapheme index to byte index
+                    let byte_idx = line_content
+                        .grapheme_indices(true)
+                        .nth(*column)
+                        .map(|(idx, _)| idx)
+                        .unwrap_or(line_content.len());
+                    
+                    line_content.insert_str(byte_idx, text);
                 }
             },
             Edit::DeleteText { line, column, text } => {
                 if let Some(line_content) = buffer.get_mut(*line) {
-                    let chars: Vec<char> = line_content.chars().collect();
-                    let mut new_chars = chars[..*column].to_vec();
-                    new_chars.extend(&chars[column + text.len()..]);
-                    *line_content = new_chars.into_iter().collect();
+                    let grapheme_count: usize = line_content.graphemes(true).count();
+                    
+                    if *column < grapheme_count {
+                        // Find byte range for this grapheme index
+                        let byte_start = line_content
+                            .grapheme_indices(true)
+                            .nth(*column)
+                            .map(|(idx, _)| idx)
+                            .unwrap_or(line_content.len());
+                        
+                        let byte_end = byte_start + text.len();
+                        
+                        if byte_end <= line_content.len() {
+                            line_content.drain(byte_start..byte_end);
+                        }
+                    }
                 }
             },
             Edit::InsertLine { line, remaining_text } => {
@@ -224,24 +240,30 @@ impl Edit {
                 }
             },
             Edit::ReplaceRange { start_line, start_column, end_line, end_column, new_text, .. } => {
-                // This is complex - handle single vs multi-line replacements
                 if start_line == end_line {
                     // Single line replacement
                     if let Some(line_content) = buffer.get_mut(*start_line) {
-                        let chars: Vec<char> = line_content.chars().collect();
-                        let mut new_chars = chars[..*start_column].to_vec();
-                        new_chars.extend(new_text.chars());
-                        new_chars.extend(&chars[*end_column..]);
-                        *line_content = new_chars.into_iter().collect();
+                        let byte_start = line_content
+                            .grapheme_indices(true)
+                            .nth(*start_column)
+                            .map(|(idx, _)| idx)
+                            .unwrap_or(line_content.len());
+                        
+                        let byte_end = line_content
+                            .grapheme_indices(true)
+                            .nth(*end_column)
+                            .map(|(idx, _)| idx)
+                            .unwrap_or(line_content.len());
+                        
+                        line_content.replace_range(byte_start..byte_end, new_text);
                     }
                 } else {
-                    // Multi-line replacement
+                    // Multi-line - remove and insert
                     for _ in *start_line..=*end_line {
                         if *start_line < buffer.len() {
                             buffer.remove(*start_line);
                         }
                     }
-                    // Insert new text (could be multi-line)
                     let new_lines: Vec<&str> = new_text.split('\n').collect();
                     for (i, line) in new_lines.iter().enumerate() {
                         buffer.insert(start_line + i, line.to_string());
@@ -251,26 +273,36 @@ impl Edit {
         }
     }
     
-    // Reverse this edit (for undo)
     pub fn reverse(&self, buffer: &mut Vec<String>) {
+        use unicode_segmentation::UnicodeSegmentation;
+        
         match self {
             Edit::InsertText { line, column, text } => {
                 // Remove the inserted text
                 if let Some(line_content) = buffer.get_mut(*line) {
-                    let chars: Vec<char> = line_content.chars().collect();
-                    let mut new_chars = chars[..*column].to_vec();
-                    new_chars.extend(&chars[column + text.len()..]);
-                    *line_content = new_chars.into_iter().collect();
+                    let byte_start = line_content
+                        .grapheme_indices(true)
+                        .nth(*column)
+                        .map(|(idx, _)| idx)
+                        .unwrap_or(line_content.len());
+                    
+                    let byte_end = byte_start + text.len();
+                    
+                    if byte_end <= line_content.len() {
+                        line_content.drain(byte_start..byte_end);
+                    }
                 }
             },
             Edit::DeleteText { line, column, text } => {
                 // Re-insert the deleted text
                 if let Some(line_content) = buffer.get_mut(*line) {
-                    let chars: Vec<char> = line_content.chars().collect();
-                    let mut new_chars = chars[..*column].to_vec();
-                    new_chars.extend(text.chars());
-                    new_chars.extend(&chars[*column..]);
-                    *line_content = new_chars.into_iter().collect();
+                    let byte_idx = line_content
+                        .grapheme_indices(true)
+                        .nth(*column)
+                        .map(|(idx, _)| idx)
+                        .unwrap_or(line_content.len());
+                    
+                    line_content.insert_str(byte_idx, text);
                 }
             },
             Edit::InsertLine { line, remaining_text } => {
@@ -285,9 +317,15 @@ impl Edit {
             Edit::DeleteLine { line, content, prev_line_end_len } => {
                 // Re-insert the deleted line
                 if *line > 0 && *line <= buffer.len() {
-                    // Split the previous line back
                     if let Some(prev) = buffer.get_mut(line - 1) {
-                        let split_content = prev.split_off(*prev_line_end_len);
+                        // Convert grapheme index to byte index for split
+                        let byte_idx = prev
+                            .grapheme_indices(true)
+                            .nth(*prev_line_end_len)
+                            .map(|(idx, _)| idx)
+                            .unwrap_or(prev.len());
+                        
+                        let split_content = prev.split_off(byte_idx);
                         buffer.insert(*line, format!("{}{}", content, split_content));
                     }
                 }
@@ -295,7 +333,13 @@ impl Edit {
             Edit::JoinLines { line, first_line_end } => {
                 // Split the line back
                 if let Some(current) = buffer.get_mut(*line) {
-                    let split_content = current.split_off(*first_line_end);
+                    let byte_idx = current
+                        .grapheme_indices(true)
+                        .nth(*first_line_end)
+                        .map(|(idx, _)| idx)
+                        .unwrap_or(current.len());
+                    
+                    let split_content = current.split_off(byte_idx);
                     buffer.insert(line + 1, split_content);
                 }
             },
@@ -303,11 +347,19 @@ impl Edit {
                 // Replace back with old text (reverse operation)
                 if start_line == end_line {
                     if let Some(line_content) = buffer.get_mut(*start_line) {
-                        let chars: Vec<char> = line_content.chars().collect();
-                        let mut new_chars = chars[..*start_column].to_vec();
-                        new_chars.extend(old_text.chars());
-                        new_chars.extend(&chars[*end_column..]);
-                        *line_content = new_chars.into_iter().collect();
+                        let byte_start = line_content
+                            .grapheme_indices(true)
+                            .nth(*start_column)
+                            .map(|(idx, _)| idx)
+                            .unwrap_or(line_content.len());
+                        
+                        let byte_end = line_content
+                            .grapheme_indices(true)
+                            .nth(*end_column)
+                            .map(|(idx, _)| idx)
+                            .unwrap_or(line_content.len());
+                        
+                        line_content.replace_range(byte_start..byte_end, old_text);
                     }
                 }
             },

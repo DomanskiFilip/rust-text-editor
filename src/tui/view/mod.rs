@@ -5,6 +5,7 @@ mod mouse;
 mod render;
 mod search;
 mod selection;
+mod graphemes;
 
 pub use crate::core::buffer::Buffer;
 use crate::core::{
