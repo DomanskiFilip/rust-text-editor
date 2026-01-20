@@ -6,6 +6,7 @@ use crate::core::selection::TextPosition;
 use crate::tui::{
     caret::{Caret, Position},
     terminal::Terminal,
+    syntax::{SyntaxHighlighter},
 };
 use crossterm::{
     cursor::MoveTo,
@@ -35,6 +36,9 @@ pub fn render_view(view: &View, caret: &Caret, is_dirty: bool) -> Result<(), Err
         .filter(|s| s.is_active())
         .map(|s| s.get_range());
 
+    // Create syntax highlighter based on current file type
+    let highlighter = SyntaxHighlighter::new(view.filetype.clone());
+
     for row in 0..visible_rows {
         let buffer_line_idx = row + view.scroll_offset;
         let terminal_row = row as u16 + Position::HEADER;
@@ -62,7 +66,12 @@ pub fn render_view(view: &View, caret: &Caret, is_dirty: bool) -> Result<(), Err
                 current_width += g_width;
             }
 
-            render_line_with_selection(&truncated, buffer_line_idx, selection_range)?;
+            render_line_with_selection_and_syntax(
+                &truncated, 
+                buffer_line_idx, 
+                selection_range, 
+                &highlighter
+            )?;
         }
     }
 
@@ -340,15 +349,25 @@ fn draw_prompt_footer(view: &View, _caret: &Caret) -> Result<(), Error> {
     Ok(())
 }
 
-fn render_line_with_selection(line: &str, line_idx: usize, selection_range: Option<(TextPosition, TextPosition)>,) -> Result<(), Error> {
+fn render_line_with_selection_and_syntax(
+    line: &str, 
+    line_idx: usize, 
+    selection_range: Option<(TextPosition, TextPosition)>,
+    highlighter: &SyntaxHighlighter,
+) -> Result<(), Error> {
+    // Get syntax tokens for this line
+    let tokens = highlighter.highlight_line(line);
+    
     if let Some((start, end)) = selection_range {
         let in_selection = line_idx >= start.line && line_idx <= end.line;
 
         if !in_selection {
-            print_text(line)?;
+            // No selection on this line - just render with syntax highlighting
+            render_tokens(&tokens)?;
             return Ok(());
         }
 
+        // Line has selection - need to handle both selection highlighting and syntax
         let chars: Vec<char> = line.chars().collect();
         let sel_start = if line_idx == start.line {
             start.column
@@ -361,38 +380,119 @@ fn render_line_with_selection(line: &str, line_idx: usize, selection_range: Opti
             chars.len()
         };
 
-        // Render before selection
-        if sel_start > 0 {
-            let before: String = chars[..sel_start].iter().collect();
-            print_text(&before)?;
-        }
-
-        // Render selection with highlight
-        if sel_start < chars.len() && sel_end > sel_start {
-            let selected: String = chars[sel_start..sel_end.min(chars.len())].iter().collect();
-            queue!(
-                stdout(),
-                SetBackgroundColor(Color::DarkBlue),
-                SetForegroundColor(Color::White),
-                Print(selected),
-                ResetColor
-            )?;
-        }
-
-        // Render after selection
-        if sel_end < chars.len() {
-            let after: String = chars[sel_end..].iter().collect();
-            print_text(&after)?;
-        }
+        render_tokens_with_selection(&tokens, sel_start, sel_end)?;
     } else {
-        print_text(line)?;
+        // No selection at all - just render with syntax highlighting
+        render_tokens(&tokens)?;
     }
 
     Ok(())
 }
 
-pub fn print_text(text: &str) -> Result<(), Error> {
-    queue!(stdout(), Print(text))?;
+// Helper: Render tokens with syntax highlighting (no selection)
+fn render_tokens(tokens: &[crate::tui::syntax::Token]) -> Result<(), Error> {
+    for token in tokens {
+        print_text_colored(&token.text, token.token_type.color())?;
+    }
+    Ok(())
+}
+
+// Helper: Render tokens with both syntax highlighting and selection
+fn render_tokens_with_selection(
+    tokens: &[crate::tui::syntax::Token],
+    sel_start: usize,
+    sel_end: usize,
+) -> Result<(), Error> {
+    let mut char_pos = 0;
+    
+    for token in tokens {
+        let token_len = token.text.chars().count();
+        let token_end = char_pos + token_len;
+        
+        // Check if this token overlaps with selection
+        if token_end <= sel_start || char_pos >= sel_end {
+            // Token is completely outside selection
+            print_text_colored(&token.text, token.token_type.color())?;
+        } else if char_pos >= sel_start && token_end <= sel_end {
+            // Token is completely inside selection
+            print_text_selected(&token.text)?;
+        } else {
+            // Token is partially selected - need to split it
+            render_token_partial_selection(token, char_pos, sel_start, sel_end)?;
+        }
+        
+        char_pos = token_end;
+    }
+    
+    Ok(())
+}
+
+// Helper: Render a token that's partially selected
+fn render_token_partial_selection(
+    token: &crate::tui::syntax::Token,
+    char_pos: usize,
+    sel_start: usize,
+    sel_end: usize,
+) -> Result<(), Error> {
+    let token_chars: Vec<char> = token.text.chars().collect();
+    
+    for (i, ch) in token_chars.iter().enumerate() {
+        let abs_pos = char_pos + i;
+        if abs_pos >= sel_start && abs_pos < sel_end {
+            // Character is selected
+            print_char_selected(*ch)?;
+        } else {
+            // Character is not selected - use syntax color
+            print_char_colored(*ch, token.token_type.color())?;
+        }
+    }
+    
+    Ok(())
+}
+
+// Helper: Print text with a specific color
+fn print_text_colored(text: &str, color: Color) -> Result<(), Error> {
+    queue!(
+        stdout(),
+        SetForegroundColor(color),
+        Print(text),
+        ResetColor
+    )?;
+    Ok(())
+}
+
+// Helper: Print text with selection highlighting
+fn print_text_selected(text: &str) -> Result<(), Error> {
+    queue!(
+        stdout(),
+        SetBackgroundColor(Color::DarkBlue),
+        SetForegroundColor(Color::White),
+        Print(text),
+        ResetColor
+    )?;
+    Ok(())
+}
+
+// Helper: Print a single character with a specific color
+fn print_char_colored(ch: char, color: Color) -> Result<(), Error> {
+    queue!(
+        stdout(),
+        SetForegroundColor(color),
+        Print(ch),
+        ResetColor
+    )?;
+    Ok(())
+}
+
+// Helper: Print a single character with selection highlighting
+fn print_char_selected(ch: char) -> Result<(), Error> {
+    queue!(
+        stdout(),
+        SetBackgroundColor(Color::DarkBlue),
+        SetForegroundColor(Color::White),
+        Print(ch),
+        ResetColor
+    )?;
     Ok(())
 }
 

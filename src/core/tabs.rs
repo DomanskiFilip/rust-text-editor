@@ -272,16 +272,63 @@ impl Drop for TabManager {
 pub fn get_friendly_filetype(extension: Option<String>) -> Option<String> {
     extension.map(|ext| {
         match ext.to_lowercase().as_str() {
+            // Programming Languages
             "rs" => "Rust".to_string(),
-            "txt" => "Text File".to_string(),
-            "md" => "Markdown".to_string(),
-            "py" => "Python".to_string(),
-            "js" => "JavaScript".to_string(),
+            "py" | "pyw" => "Python".to_string(),
+            "js" | "mjs" => "JavaScript".to_string(),
+            "ts" | "mts" => "TypeScript".to_string(),
+            "c" => "C".to_string(),
+            "cpp" | "cc" | "cxx" | "hpp" => "C++".to_string(),
+            "cs" => "C#".to_string(),
+            "java" | "jar" => "Java".to_string(),
+            "go" => "Go".to_string(),
+            "rb" => "Ruby".to_string(),
+            "php" => "PHP".to_string(),
+            "swift" => "Swift".to_string(),
+            "kt" | "kts" => "Kotlin".to_string(),
+            "dart" => "Dart".to_string(),
+            "lua" => "Lua".to_string(),
+            "pl" | "pm" => "Perl".to_string(),
+            "r" => "R".to_string(),
+            "scala" => "Scala".to_string(),
+            "hs" => "Haskell".to_string(),
+            "zig" => "Zig".to_string(),
+            "nim" => "Nim".to_string(),
+
+            // Web Technologies
+            "html" | "htm" => "HTML".to_string(),
+            "css" => "CSS".to_string(),
+            "scss" | "sass" => "Sass".to_string(),
+            "jsx" => "React JSX".to_string(),
+            "tsx" => "React TSX".to_string(),
+            "vue" => "Vue".to_string(),
+
+            // Configuration & Data
             "json" => "JSON".to_string(),
             "toml" => "TOML".to_string(),
-            "c" => "C".to_string(),
-            "cpp" => "C++".to_string(),
-            _ => ext.to_uppercase(), // Fallback: "EXE", "LOG", etc.
+            "yaml" | "yml" => "YAML".to_string(),
+            "xml" => "XML".to_string(),
+            "ini" | "conf" | "cfg" => "Config".to_string(),
+            "sql" => "SQL Query".to_string(),
+            "env" => "Environment".to_string(),
+            
+            // Shell & Scripts
+            "sh" => "Shell Script".to_string(),
+            "bash" => "Bash Script".to_string(),
+            "zsh" => "Zsh Script".to_string(),
+            "ps1" => "PowerShell".to_string(),
+            "bat" | "cmd" => "Batch File".to_string(),
+            "make" | "mak" => "Makefile".to_string(),
+
+            // Documentation & Text
+            "txt" => "Text File".to_string(),
+            "md" | "markdown" => "Markdown".to_string(),
+            "log" => "Log File".to_string(),
+            "csv" => "CSV Data".to_string(),
+            "tex" => "LaTeX".to_string(),
+            
+            // Fallback
+            _ => ext.to_uppercase(),
         }
     })
 }

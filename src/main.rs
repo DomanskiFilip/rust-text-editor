@@ -29,19 +29,28 @@ fn main() {
             let raw_path = &args[1];
             let path_buf = std::fs::canonicalize(raw_path).unwrap_or_else(|_| std::path::PathBuf::from(raw_path));
             
-            let path = path_buf.to_string_lossy().into_owned();
-            let extension = path_buf.extension().map(|ext| ext.to_string_lossy().into_owned());
+            // Extract full path for the backend
+            let full_path = path_buf.to_string_lossy().into_owned();
             
-            // open editor with selected file
-            match tui::TerminalEditor::new_with_file(&path) {
+            // Extract just the file name for the display/UI
+            let display_name = path_buf
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| full_path.clone());
+            
+            let extension = path_buf.extension().map(|ext| ext.to_string_lossy().into_owned());
+            let friendly_type = core::tabs::get_friendly_filetype(extension);
+            
+            // Open editor with selected file
+            match tui::TerminalEditor::new_with_file(&full_path) {
                 Ok(mut ed) => {
-                    ed.set_filename_and_filetype(Some(path), extension);
+                    // We pass 'display_name' to the view so only the name shows in the status bar
+                    // while the 'full_path' remains stored in the tab for saving logic
+                    ed.set_filename_and_filetype(Some(display_name), friendly_type);
                     ed
                 },
                 Err(e) => {
-                    eprintln!("Error opening file {}: {}", path, e);
-                    eprintln!("Starting with empty editor instead");
-                    // open empty editor on error
+                    eprintln!("Error opening file {}: {}", full_path, e);
                     tui::TerminalEditor::new(core::buffer::Buffer::default())
                 }
             }

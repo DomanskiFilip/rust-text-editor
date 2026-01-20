@@ -1,6 +1,7 @@
 // module binding tui logic, consumeing shortcuts and save logic
 pub mod caret;
 mod terminal;
+pub mod syntax;
 pub mod view;
 
 use crate::core::{
