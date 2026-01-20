@@ -37,6 +37,7 @@ pub struct View {
     pub is_dragging: bool,
     pub scroll_offset: usize,
     pub filename: Option<String>,
+    pub filetype: Option<String>,
     pub prompt_since: Option<std::time::Instant>,
     pub show_shortcuts: bool,
     pub needs_redraw: bool,
@@ -52,6 +53,7 @@ impl View {
             buffer,
             scroll_offset: 0,
             filename: None,
+            filetype: None,
             prompt_since: None,
             show_shortcuts: false,
             selection: None,
@@ -63,8 +65,9 @@ impl View {
         }
     }
 
-    pub fn set_filename(&mut self, filename: String) {
-        self.filename = Some(filename);
+    pub fn set_filename_and_filetype(&mut self, filename: Option<String>, filetype: Option<String>) {
+        self.filename = filename;
+        self.filetype = filetype;
     }
 
     // Prompt helpers - used to show a special footer prompt (errors, save-as, etc.)
@@ -390,6 +393,7 @@ impl Default for View {
             buffer: Buffer::default(),
             scroll_offset: 0,
             filename: None,
+            filetype: None,
             prompt_since: None,
             show_shortcuts: false,
             selection: None,

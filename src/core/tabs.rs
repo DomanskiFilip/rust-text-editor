@@ -11,6 +11,7 @@ use serde::{Serialize, Deserialize};
 pub struct Tab {
     pub buffer: Buffer,
     pub filename: Option<String>,
+    pub filetype: Option<String>,
     pub scroll_offset: usize,
     pub cursor_pos: Position,
     pub has_unsaved_changes: bool,
@@ -18,10 +19,11 @@ pub struct Tab {
 }
 
 impl Tab {
-    pub fn new(buffer: Buffer, filename: Option<String>) -> Self {
+    pub fn new(buffer: Buffer, filename: Option<String>, filetype: Option<String>) -> Self {
         Self {
             buffer,
             filename,
+            filetype,
             scroll_offset: 0,
             cursor_pos: Position::default(),
             has_unsaved_changes: false,
@@ -30,16 +32,24 @@ impl Tab {
     }
 
     pub fn from_file(path: &str) -> Result<Self, Error> {
-        // Convert to absolute path immediately
-        let absolute_path = std::fs::canonicalize(path)
-            .map(|p| p.to_string_lossy().into_owned())
-            // Fallback to original if canonicalize fails (e.g., file doesn't exist yet)
-            .unwrap_or_else(|_| path.to_string());
-
-        let content = fs::read_to_string(&absolute_path)?;
+        // Keep the absolute path for internal use (saving/loading)
+        let path_buf = std::fs::canonicalize(path)
+            .unwrap_or_else(|_| std::path::PathBuf::from(path));
+    
+        // Get the filename
+        let display_name = path_buf
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path_buf.to_string_lossy().into_owned());
+    
+        // Extract the file extension
+        let raw_ext = path_buf.extension().map(|ext| ext.to_string_lossy().into_owned());
+        let friendly_filetype = get_friendly_filetype(raw_ext);
+    
+        let content = std::fs::read_to_string(&path_buf)?;
         let buffer = Buffer::from_string(content);
         
-        Ok(Self::new(buffer, Some(absolute_path)))
+        Ok(Self::new(buffer, Some(display_name), friendly_filetype))
     }
 }
 
@@ -47,6 +57,7 @@ impl Tab {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct TabInfo {
     filename: Option<String>,
+    filetype: Option<String>,
     scroll_offset: usize,
     cursor_line: u16,
     cursor_col: u16,
@@ -66,14 +77,14 @@ pub struct TabManager {
 }
 
 impl TabManager {
-    pub fn new(initial_buffer: Buffer, filename: Option<String>) -> Self {
+    pub fn new(initial_buffer: Buffer, filename: Option<String>, filetype: Option<String>) -> Self {
         let session_file = Self::get_session_file_path();
         
         // Try to load previous session
         let manager = if let Ok(session) = Self::load_session(&session_file) {
             Self::from_session(session)
         } else {
-            let initial_tab = Tab::new(initial_buffer, filename);
+            let initial_tab = Tab::new(initial_buffer, filename, filetype);
             Self {
                 tabs: vec![initial_tab],
                 active_tab_index: 0,
@@ -113,6 +124,8 @@ impl TabManager {
                 // Try to load the file
                 match Tab::from_file(filename) {
                     Ok(mut t) => {
+                        // Apply the saved filetype from tab_info
+                        t.filetype = tab_info.filetype.clone(); 
                         t.scroll_offset = tab_info.scroll_offset;
                         t.cursor_pos = Position {
                             x: tab_info.cursor_col,
@@ -122,12 +135,11 @@ impl TabManager {
                     }
                     Err(e) => {
                         eprintln!("Could not load file {}: {}", filename, e);
-                        // Create empty tab as fallback
-                        Tab::new(Buffer::default(), None)
+                        Tab::new(Buffer::default(), None, None)
                     }
                 }
             } else {
-                Tab::new(Buffer::default(), None)
+                Tab::new(Buffer::default(), None, None)
             };
             
             tabs.push(tab);
@@ -135,7 +147,7 @@ impl TabManager {
         
         // Ensure at least one tab exists
         if tabs.is_empty() {
-            tabs.push(Tab::new(Buffer::default(), None));
+            tabs.push(Tab::new(Buffer::default(), None, None));
         }
         
         let active_index = session.active_tab_index.min(tabs.len() - 1);
@@ -151,6 +163,7 @@ impl TabManager {
     pub fn save_session(&self) -> Result<(), Error> {
         let tab_infos: Vec<TabInfo> = self.tabs.iter().map(|tab| TabInfo {
             filename: tab.filename.clone(),
+            filetype: tab.filetype.clone(),
             scroll_offset: tab.scroll_offset,
             cursor_line: tab.cursor_pos.y,
             cursor_col: tab.cursor_pos.x,
@@ -202,7 +215,7 @@ impl TabManager {
         }
 
         // Create new tab
-        let new_tab = Tab::new(Buffer::default(), None);
+        let new_tab = Tab::new(Buffer::default(), None, None);
         
         // Insert at position 0 (tab 1)
         self.tabs.insert(0, new_tab);
@@ -253,4 +266,22 @@ impl Drop for TabManager {
     fn drop(&mut self) {
         let _ = self.save_session();
     }
+}
+
+// utility for filetypes
+pub fn get_friendly_filetype(extension: Option<String>) -> Option<String> {
+    extension.map(|ext| {
+        match ext.to_lowercase().as_str() {
+            "rs" => "Rust".to_string(),
+            "txt" => "Text File".to_string(),
+            "md" => "Markdown".to_string(),
+            "py" => "Python".to_string(),
+            "js" => "JavaScript".to_string(),
+            "json" => "JSON".to_string(),
+            "toml" => "TOML".to_string(),
+            "c" => "C".to_string(),
+            "cpp" => "C++".to_string(),
+            _ => ext.to_uppercase(), // Fallback: "EXE", "LOG", etc.
+        }
+    })
 }

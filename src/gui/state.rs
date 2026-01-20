@@ -19,13 +19,13 @@ pub struct EditorState {
 impl EditorState {
     pub fn new(file_path: Option<String>) -> Self {
         let tab_manager = if let Some(path) = file_path {
-            let mut tm = TabManager::new(Buffer::default(), None);
+            let mut tm = TabManager::new(Buffer::default(), None, None);
             if let Err(e) = tm.open_file_in_new_tab(&path) {
                 eprintln!("Failed to open file: {}", e);
             }
             tm
         } else {
-            TabManager::new(Buffer::default(), None)
+            TabManager::new(Buffer::default(), None, None)
         };
 
         Self {

@@ -10,9 +10,7 @@ use crate::tui::{
 use crossterm::{
     cursor::MoveTo,
     queue,
-    style::{
-        Attribute, Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor,
-    },
+    style::{Attribute, Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor},
 };
 use std::io::{Error, stdout};
 
@@ -145,6 +143,17 @@ fn draw_info_footer(view: &View, caret: &Caret, is_dirty: bool) -> Result<(), Er
         Print(format!(" {}{} ", filename_display, modified_tag)),
         SetAttribute(Attribute::Reset),
     )?;
+    
+    // filetype or [unknown file type]
+    let filetype_display = view.filetype.as_deref().unwrap_or("[unknown file type]");
+    queue!(
+        stdout(),
+        SetBackgroundColor(Color::Black),
+        SetForegroundColor(Color::Yellow),
+        SetAttribute(Attribute::Bold),
+        Print(format!(" {} ", filetype_display)),
+        SetAttribute(Attribute::Reset),
+    )?;
 
     // Calculate stats - find last non-empty line for accurate count
     let total_lines = view
@@ -170,16 +179,6 @@ fn draw_info_footer(view: &View, caret: &Caret, is_dirty: bool) -> Result<(), Er
     let stats = format!(" Ln {}, Col {} ", line_num, col_num);
     queue!(stdout(), SetForegroundColor(Color::White), Print(stats),)?;
 
-    let credits = "© Filip Domanski";
-    queue!(
-        stdout(),
-        SetBackgroundColor(Color::Black),
-        SetForegroundColor(Color::Yellow),
-        SetAttribute(Attribute::Bold),
-        Print(format!(" {} ", credits)),
-        SetAttribute(Attribute::Reset),
-    )?;
-
     // Middle: Lines and Characters count
     let counts = format!("Lines: {} | Chars: {} ", total_lines, total_chars);
     let counts_width = counts.len() as u16;
@@ -190,6 +189,19 @@ fn draw_info_footer(view: &View, caret: &Caret, is_dirty: bool) -> Result<(), Er
         SetBackgroundColor(Color::Black),
         SetForegroundColor(Color::White),
         Print(counts),
+    )?;
+    
+    let credits = "© Filip Domanski";
+    let credits_width = credits.len() as u16;
+    let credits_pos = middle_pos + credits_width;
+    queue!(
+        stdout(),
+        MoveTo(credits_pos, footer_row),
+        SetBackgroundColor(Color::Black),
+        SetForegroundColor(Color::Yellow),
+        SetAttribute(Attribute::Bold),
+        Print(format!(" {} ", credits)),
+        SetAttribute(Attribute::Reset),
     )?;
 
     // Right side: Tab hint - show "Ctrl+1-9 for tabs" or actual tab info if we have tab_manager

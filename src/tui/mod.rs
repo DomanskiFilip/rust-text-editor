@@ -3,7 +3,11 @@ pub mod caret;
 mod terminal;
 pub mod view;
 
-use crate::core::{actions::Action, shortcuts::Shortcuts, tabs::TabManager};
+use crate::core::{
+    actions::Action, 
+    shortcuts::Shortcuts, 
+    tabs::{TabManager, get_friendly_filetype}
+};
 use caret::Caret;
 use crossterm::event::{read, Event, KeyCode, KeyEventKind};
 use terminal::Terminal;
@@ -21,7 +25,7 @@ pub struct TerminalEditor {
 impl TerminalEditor {
     pub fn new(buffer: Buffer) -> Self {
         Self {
-            tab_manager: TabManager::new(buffer.clone(), None),
+            tab_manager: TabManager::new(buffer.clone(), None, None),
             view: View::new(buffer),
             caret: Caret::new(),
             shortcuts: Shortcuts::new(),
@@ -31,7 +35,7 @@ impl TerminalEditor {
     }
 
     pub fn new_with_file(path: &str) -> Result<Self, std::io::Error> {
-        let mut tab_manager = TabManager::new(Buffer::default(), None);
+        let mut tab_manager = TabManager::new(Buffer::default(), None, None);
         tab_manager.open_file_in_new_tab(path)?;
 
         let tab = tab_manager.current_tab();
@@ -56,9 +60,9 @@ impl TerminalEditor {
         Ok(())
     }
     
-    pub fn set_filename(&mut self, filename: String) {
-        self.tab_manager.current_tab_mut().filename = Some(filename.clone());
-        self.view.set_filename(filename);
+    pub fn set_filename_and_filetype(&mut self, filename: Option<String>, filetype: Option<String>) {
+        self.tab_manager.current_tab_mut().filename = filename.clone();
+        self.view.set_filename_and_filetype(filename, filetype);
     }
 
     pub fn run(&mut self) {
@@ -102,6 +106,7 @@ impl TerminalEditor {
         self.view.buffer = tab.buffer.clone();
         self.view.scroll_offset = tab.scroll_offset;
         self.view.filename = tab.filename.clone();
+        self.view.filetype = tab.filetype.clone();
         self.view.needs_redraw = true;
     }
 
@@ -517,10 +522,16 @@ impl TerminalEditor {
                                     if filename.is_empty() {
                                         break;
                                     }
+                                    
+                                    let raw_ext = std::path::Path::new(&filename)
+                                                .extension()
+                                                .map(|ext| ext.to_string_lossy().into_owned());
+                                            
+                                    let friendly_filetype = get_friendly_filetype(raw_ext);
 
-                                    self.tab_manager.current_tab_mut().filename =
-                                        Some(filename.clone());
-                                    self.view.set_filename(filename.clone());
+                                    self.tab_manager.current_tab_mut().filename = Some(filename.clone());
+                                    self.tab_manager.current_tab_mut().filetype = friendly_filetype.clone();
+                                    self.view.set_filename_and_filetype(Some(filename.clone()), friendly_filetype.clone());
 
                                     let last_line = self
                                         .view

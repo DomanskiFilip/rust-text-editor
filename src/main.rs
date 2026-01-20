@@ -27,14 +27,15 @@ fn main() {
         // Launch TUI mode (existing code)
         let mut editor = if args.len() > 1 {
             let raw_path = &args[1];
-            let path = std::fs::canonicalize(raw_path)
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_else(|_| raw_path.clone());
+            let path_buf = std::fs::canonicalize(raw_path).unwrap_or_else(|_| std::path::PathBuf::from(raw_path));
+            
+            let path = path_buf.to_string_lossy().into_owned();
+            let extension = path_buf.extension().map(|ext| ext.to_string_lossy().into_owned());
             
             // open editor with selected file
             match tui::TerminalEditor::new_with_file(&path) {
                 Ok(mut ed) => {
-                    ed.set_filename(path);
+                    ed.set_filename_and_filetype(Some(path), extension);
                     ed
                 },
                 Err(e) => {
