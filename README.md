@@ -102,7 +102,7 @@ icon generated using nano banana
 
 Copyright (c) 2026 Filip Domanski
 
-CATdesktop is provided for personal, non-commercial use only. You may view, download, and run the application or source code for your own personal purposes.
+quick notepad is provided for personal, non-commercial use only. You may view, download, and run the application or source code for your own personal purposes.
 
 You may not:
 - Redistribute, host, or publish the code or application in any form, whether modified or unmodified.
@@ -110,6 +110,6 @@ You may not:
 - Create forks or derivative works for distribution or public hosting.
 - Use the code or application in any commercial context.
 
-Filip Domanski is the exclusive host and distributor of CATdesktop. For commercial or redistribution inquiries, contact the copyright holder.
+Filip Domanski is the exclusive host and distributor of quick notepad. For commercial or redistribution inquiries, contact the copyright holder.
 
 All rights reserved.
