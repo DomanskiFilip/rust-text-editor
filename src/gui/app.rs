@@ -1,5 +1,6 @@
-// app module specifying gui interface
+// app module specifying gui interface with core shortcuts integration
 use super::{editor::EditorPanel, state::EditorState, themes};
+use crate::core::actions::Action;
 use egui::{Context, ViewportCommand};
 
 pub struct QuickNotepadApp {
@@ -26,16 +27,12 @@ impl QuickNotepadApp {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("📄 New (Ctrl+N)").clicked() {
-                        self.state.tab_manager.new_tab();
+                        self.handle_action(Action::New);
                         ui.close();
                     }
 
                     if ui.button("💾 Save (Ctrl+S)").clicked() {
-                        if self.state.current_filename().is_some() {
-                            let _ = self.state.save();
-                        } else {
-                            self.show_save_dialog = true;
-                        }
+                        self.handle_action(Action::Save);
                         ui.close();
                     }
 
@@ -54,45 +51,41 @@ impl QuickNotepadApp {
 
                 ui.menu_button("Edit", |ui| {
                     if ui.button("↶ Undo (Ctrl+Z)").clicked() {
-                        if let Some(op) = self.state.current_edit_history().undo() {
-                            op.edit.reverse(&mut self.state.current_buffer_mut().lines);
-                        }
+                        self.handle_action(Action::Undo);
                         ui.close();
                     }
 
                     if ui.button("↷ Redo (Ctrl+Y)").clicked() {
-                        if let Some(op) = self.state.current_edit_history().redo() {
-                            op.edit.apply(&mut self.state.current_buffer_mut().lines);
-                        }
+                        self.handle_action(Action::Redo);
                         ui.close();
                     }
 
                     ui.separator();
 
                     if ui.button("📋 Copy (Ctrl+C)").clicked() {
-                        self.state.copy_selection();
+                        self.handle_action(Action::Copy);
                         ui.close();
                     }
 
                     if ui.button("✂ Cut (Ctrl+X)").clicked() {
-                        self.state.cut_selection();
+                        self.handle_action(Action::Cut);
                         ui.close();
                     }
 
                     if ui.button("📄 Paste (Ctrl+V)").clicked() {
-                        self.state.paste_from_clipboard();
+                        self.handle_action(Action::Paste);
                         ui.close();
                     }
 
                     ui.separator();
 
                     if ui.button("🔍 Find (Ctrl+F)").clicked() {
-                        self.state.search_active = true;
+                        self.handle_action(Action::Search);
                         ui.close();
                     }
 
                     if ui.button("🔤 Select All (Ctrl+A)").clicked() {
-                        self.state.select_all();
+                        self.handle_action(Action::SelectAll);
                         ui.close();
                     }
                 });
@@ -108,7 +101,7 @@ impl QuickNotepadApp {
                     for i in 1..=9 {
                         let tab_text = format!("Tab {} (Ctrl+{})", i, i);
                         if ui.button(tab_text).clicked() {
-                            let _ = self.state.tab_manager.switch_to_tab(i);
+                            self.handle_action(Action::SwitchTab(i));
                             ui.close();
                         }
                     }
@@ -159,58 +152,25 @@ impl QuickNotepadApp {
             return;
         }
 
-        // Use consume_shortcut to properly consume events and prevent them from reaching editor
         ctx.input_mut(|i| {
-            // File operations
-            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::S)) {
-                if self.state.current_filename().is_some() {
-                    let _ = self.state.save();
-                } else {
-                    self.show_save_dialog = true;
-                    self.dialog_has_focus = true;
+            // Map egui shortcuts to our Action enum
+            let actions = vec![
+                (egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::S), Action::Save),
+                (egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::N), Action::New),
+                (egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Q), Action::Quit),
+                (egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Z), Action::Undo),
+                (egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Y), Action::Redo),
+                (egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::C), Action::Copy),
+                (egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::X), Action::Cut),
+                (egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::V), Action::Paste),
+                (egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::F), Action::Search),
+                (egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::A), Action::SelectAll),
+            ];
+
+            for (shortcut, action) in actions {
+                if i.consume_shortcut(&shortcut) {
+                    self.handle_action(action);
                 }
-            }
-
-            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::N)) {
-                self.state.tab_manager.new_tab();
-            }
-
-            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Q)) {
-                ctx.send_viewport_cmd(ViewportCommand::Close);
-            }
-
-            // Edit operations - use the same logic as menu buttons
-            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Z)) {
-                if let Some(op) = self.state.current_edit_history().undo() {
-                    op.edit.reverse(&mut self.state.current_buffer_mut().lines);
-                }
-            }
-
-            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::Y)) {
-                if let Some(op) = self.state.current_edit_history().redo() {
-                    op.edit.apply(&mut self.state.current_buffer_mut().lines);
-                }
-            }
-
-            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::C)) {
-                self.state.copy_selection();
-            }
-
-            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::X)) {
-                self.state.cut_selection();
-            }
-
-            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::V)) {
-                self.state.paste_from_clipboard();
-            }
-
-            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::F)) {
-                self.state.search_active = true;
-                self.dialog_has_focus = true;
-            }
-
-            if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::A)) {
-                self.state.select_all();
             }
 
             // Tab switching - Ctrl+1-9
@@ -222,10 +182,60 @@ impl QuickNotepadApp {
                     _ => egui::Key::Num0,
                 };
                 if i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::CTRL, key)) {
-                    let _ = self.state.tab_manager.switch_to_tab(num);
+                    self.handle_action(Action::SwitchTab(num));
                 }
             }
         });
+    }
+
+    // Centralized action handler - uses the Action enum from core
+    fn handle_action(&mut self, action: Action) {
+        match action {
+            Action::Save => {
+                if self.state.current_filename().is_some() {
+                    let _ = self.state.save();
+                } else {
+                    self.show_save_dialog = true;
+                    self.dialog_has_focus = true;
+                }
+            }
+            Action::New => {
+                self.state.tab_manager.new_tab();
+            }
+            Action::Quit => {
+                // Handle in update loop
+            }
+            Action::Undo => {
+                if let Some(op) = self.state.current_edit_history().undo() {
+                    op.edit.reverse(&mut self.state.current_buffer_mut().lines);
+                }
+            }
+            Action::Redo => {
+                if let Some(op) = self.state.current_edit_history().redo() {
+                    op.edit.apply(&mut self.state.current_buffer_mut().lines);
+                }
+            }
+            Action::Copy => {
+                self.state.copy_selection();
+            }
+            Action::Cut => {
+                self.state.cut_selection();
+            }
+            Action::Paste => {
+                self.state.paste_from_clipboard();
+            }
+            Action::Search => {
+                self.state.search_active = true;
+                self.dialog_has_focus = true;
+            }
+            Action::SelectAll => {
+                self.state.select_all();
+            }
+            Action::SwitchTab(num) => {
+                let _ = self.state.tab_manager.switch_to_tab(num);
+            }
+            _ => {}
+        }
     }
 
     fn show_save_dialog(&mut self, ctx: &Context) {
@@ -278,6 +288,8 @@ impl QuickNotepadApp {
     }
 
     fn show_shortcuts_window(&mut self, ctx: &Context) {
+        use crate::core::shortcuts::Shortcuts;
+        
         egui::Window::new("Keyboard Shortcuts")
             .collapsible(true)
             .resizable(true)
@@ -289,22 +301,11 @@ impl QuickNotepadApp {
                         ui.label("Shortcut");
                         ui.end_row();
 
-                        let shortcuts = vec![
-                            ("New", "Ctrl+N"),
-                            ("Save", "Ctrl+S"),
-                            ("Quit", "Ctrl+Q"),
-                            ("Undo", "Ctrl+Z"),
-                            ("Redo", "Ctrl+Y"),
-                            ("Copy", "Ctrl+C"),
-                            ("Cut", "Ctrl+X"),
-                            ("Paste", "Ctrl+V"),
-                            ("Find", "Ctrl+F"),
-                            ("Select All", "Ctrl+A"),
-                            ("Switch Tab", "Ctrl+1-9"),
-                        ];
-
-                        for (action, shortcut) in shortcuts {
-                            ui.label(action);
+                        // Get shortcuts from core Shortcuts module
+                        let shortcuts = Shortcuts::get_ctrl_shortcuts();
+                        
+                        for (shortcut, description) in shortcuts {
+                            ui.label(description);
                             ui.label(shortcut);
                             ui.end_row();
                         }

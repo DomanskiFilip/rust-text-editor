@@ -1,4 +1,4 @@
-// state - adapter between core logic and GUI This bridges TUI-based logic to work with egui
+// state - adapter between core logic and GUI with Wayland-safe clipboard handling
 use crate::core::{
     buffer::Buffer,
     edit_history::EditHistory,
@@ -14,6 +14,11 @@ pub struct EditorState {
     pub search_query: String,
     pub search_active: bool,
     pub is_dragging: bool,
+    // Dual clipboard approach:
+    // - arboard handles actual system clipboard (works on X11 and most Wayland)
+    // - internal clipboard_text as fallback for edge cases
+    // - egui events provide Wayland compatibility layer
+    clipboard_text: Option<String>,
 }
 
 impl EditorState {
@@ -36,6 +41,7 @@ impl EditorState {
             search_query: String::new(),
             search_active: false,
             is_dragging: false,
+            clipboard_text: None,
         }
     }
 
@@ -121,16 +127,13 @@ impl EditorState {
     }
     
     pub fn move_cursor(&mut self, dx: isize, dy: isize) {
-        // Get limits first as plain integers
         let line_count = self.current_buffer().lines.len();
         
-        // Perform calculations using those integers
         let mut new_line = self.cursor_pos.line as isize + dy;
         new_line = new_line.clamp(0, line_count.saturating_sub(1) as isize);
         
         self.cursor_pos.line = new_line as usize;
     
-        // Get the new line's length
         let line_len = self.current_buffer().lines[self.cursor_pos.line].len();
         let mut new_col = self.cursor_pos.column as isize + dx;
         new_col = new_col.clamp(0, line_len as isize);
@@ -150,7 +153,6 @@ impl EditorState {
         if let Some(selection) = self.selection.take() {
             self.delete_selection(selection);
         } else {
-            // Delete character at cursor
             let pos = self.cursor_pos;
             let buffer = self.current_buffer_mut();
             if pos.line < buffer.lines.len() {
@@ -180,7 +182,6 @@ impl EditorState {
                 }
             }
         } else if self.cursor_pos.line > 0 {
-            // Merge with previous line
             let pos = self.cursor_pos;
             let buffer = self.current_buffer_mut();
             let current_line = buffer.lines[pos.line].clone();
@@ -259,14 +260,13 @@ impl EditorState {
         self.set_filename(path.to_string());
         self.mark_clean();
 
-        // Save session
         let _ = self.tab_manager.save_session();
 
         Ok(())
     }
 
-    // Copy selection to clipboard
-    pub fn copy_selection(&self) {
+    // Copy selection to clipboard using arboard
+    pub fn copy_selection(&mut self) {
         if let Some(ref selection) = self.selection {
             if !selection.is_active() {
                 return;
@@ -274,11 +274,20 @@ impl EditorState {
 
             let (start, end) = selection.get_range();
             let text = self.extract_text_range(start, end);
-
+            
+            // Try to use arboard (works on X11 and most Wayland compositors)
             if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                let _ = clipboard.set_text(text);
+                let _ = clipboard.set_text(&text);
             }
+            
+            // Also store internally as fallback
+            self.clipboard_text = Some(text);
         }
+    }
+    
+    // Get the text from last copy operation
+    pub fn get_clipboard_text(&self) -> Option<&str> {
+        self.clipboard_text.as_deref()
     }
 
     // Cut selection to clipboard
@@ -291,7 +300,7 @@ impl EditorState {
         }
     }
 
-    // Paste from clipboard
+    // Paste from clipboard using arboard
     pub fn paste_from_clipboard(&mut self) {
         // Delete selection first if active
         if let Some(selection) = self.selection.take() {
@@ -300,10 +309,18 @@ impl EditorState {
             }
         }
 
-        if let Ok(mut clipboard) = arboard::Clipboard::new() {
-            if let Ok(text) = clipboard.get_text() {
-                self.insert_text(&text);
-            }
+        // Try arboard first
+        let text = if let Ok(mut clipboard) = arboard::Clipboard::new() {
+            clipboard.get_text().ok()
+        } else {
+            None
+        };
+        
+        // Fall back to internal clipboard if arboard fails
+        let text = text.or_else(|| self.clipboard_text.clone());
+        
+        if let Some(text) = text {
+            self.insert_text(&text);
         }
     }
 
@@ -396,7 +413,6 @@ impl EditorState {
         }
 
         if !matches.is_empty() {
-            // Jump to first match
             let first = matches[0];
             self.cursor_pos = first;
             self.selection = Some(Selection {
@@ -410,12 +426,10 @@ impl EditorState {
     }
 
     pub fn next_search_match(&mut self) {
-        // Simple implementation - just search again from current position
         self.perform_search();
     }
 
     pub fn prev_search_match(&mut self) {
-        // Simple implementation - could be improved
         self.perform_search();
     }
 }

@@ -1,4 +1,4 @@
-// src/gui/editor.rs
+// src/gui/editor.rs - Editor with proper clipboard handling
 use super::state::EditorState;
 use crate::core::selection::{Selection, TextPosition};
 use egui::{Color32, FontId, Pos2, Rect, Response, Sense, Stroke, Ui};
@@ -63,6 +63,59 @@ impl<'a> EditorPanel<'a> {
     }
 
     fn handle_input(&mut self, ui: &mut Ui, response: &Response) {
+        // Handle clipboard events - support both egui and arboard
+        // egui events provide Wayland compatibility, arboard handles the actual clipboard
+        let mut should_copy = false;
+        let mut should_cut = false;
+        let mut paste_text: Option<String> = None;
+        
+        ui.input(|i| {
+            for event in &i.events {
+                match event {
+                    egui::Event::Paste(text) => {
+                        paste_text = Some(text.clone());
+                    }
+                    egui::Event::Copy => {
+                        should_copy = true;
+                    }
+                    egui::Event::Cut => {
+                        should_cut = true;
+                    }
+                    _ => {}
+                }
+            }
+        });
+        
+        // Handle copy
+        if should_copy {
+            self.state.copy_selection();
+            // Also put it in egui's clipboard for cross-app compatibility
+            if let Some(text) = self.state.get_clipboard_text() {
+                ui.ctx().copy_text(text.to_string());
+            }
+        }
+        
+        // Handle cut
+        if should_cut {
+            self.state.cut_selection();
+            // Also put it in egui's clipboard
+            if let Some(text) = self.state.get_clipboard_text() {
+                ui.ctx().copy_text(text.to_string());
+            }
+        }
+        
+        // Handle paste
+        if let Some(text) = paste_text {
+            // Delete selection first if it exists
+            if let Some(selection) = self.state.selection.take() {
+                if selection.is_active() {
+                    let (start, _) = selection.get_range();
+                    self.state.cursor_pos = start;
+                }
+            }
+            self.state.insert_text(&text);
+        }
+
         // Handle text input - but NOT if modifiers are pressed
         ui.input(|i| {
             for event in &i.events {
