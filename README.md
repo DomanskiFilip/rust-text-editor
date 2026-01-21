@@ -3,8 +3,8 @@ A modern, dual-mode text editor written in Rust that runs both in the terminal (
 
 ![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white)
 
-## Features
-# Core Functionality
+# Features
+## Core Functionality
 
  - Dual Mode: Run in terminal (TUI) or as native GUI
  
@@ -20,7 +20,7 @@ A modern, dual-mode text editor written in Rust that runs both in the terminal (
  
  - Undo/Redo: Full edit history with intelligent grouping
 
-# Advanced Features
+## Advanced Features
 
  - Mouse Support: Click, drag, double-click, triple-click selection
  
@@ -30,7 +30,7 @@ A modern, dual-mode text editor written in Rust that runs both in the terminal (
  
  - Configurable Shortcuts: All shortcuts in one place (for now you need to change in: src/core/shortcuts.rs)
 
-# Technical Highlights
+## Technical Highlights
 
  - Fast Rendering: Optimized for minimal redraws
  
