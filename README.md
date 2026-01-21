@@ -97,3 +97,19 @@ cd quick-notepad-1.0.0-linux-x86_64
 
 <img width="1024" height="1024" alt="image" src="https://github.com/user-attachments/assets/74ae2248-706e-4970-ada4-f67a48003c86" />
 icon generated using nano banana
+
+# LICENSE
+
+Copyright (c) 2026 Filip Domanski
+
+CATdesktop is provided for personal, non-commercial use only. You may view, download, and run the application or source code for your own personal purposes.
+
+You may not:
+- Redistribute, host, or publish the code or application in any form, whether modified or unmodified.
+- Monetize, sell, or offer the code or application as a service.
+- Create forks or derivative works for distribution or public hosting.
+- Use the code or application in any commercial context.
+
+Filip Domanski is the exclusive host and distributor of CATdesktop. For commercial or redistribution inquiries, contact the copyright holder.
+
+All rights reserved.
