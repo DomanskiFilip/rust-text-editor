@@ -211,7 +211,8 @@ impl SyntaxHighlighter {
                 }
             } else if in_string {
                 current.push(ch);
-            } else if ch.is_numeric() || ch == '-' || ch == '.' {
+            } else if ch.is_numeric() || (ch == '-' && current.is_empty()) {
+                // Only treat '-' as number start if current is empty
                 current.push(ch);
                 while let Some(&next) = chars.peek() {
                     if next.is_numeric() || next == '.' || next == 'e' || next == 'E' || next == '-' || next == '+' {
@@ -225,7 +226,8 @@ impl SyntaxHighlighter {
                     token_type: TokenType::Number,
                 });
                 current.clear();
-            } else if ch == 't' || ch == 'f' || ch == 'n' {
+            } else if ch.is_alphabetic() {
+                // Handle keywords (true, false, null)
                 current.push(ch);
                 while let Some(&next) = chars.peek() {
                     if next.is_alphabetic() {
@@ -244,15 +246,26 @@ impl SyntaxHighlighter {
                 });
                 current.clear();
             } else if ch == '{' || ch == '}' || ch == '[' || ch == ']' || ch == ':' || ch == ',' {
+                // Flush any accumulated whitespace/text first
+                if !current.is_empty() {
+                    tokens.push(Token {
+                        text: current.clone(),
+                        token_type: TokenType::Normal,
+                    });
+                    current.clear();
+                }
+                // Add punctuation as its own token
                 tokens.push(Token {
                     text: ch.to_string(),
                     token_type: TokenType::Punctuation,
                 });
             } else {
+                // Whitespace and other characters
                 current.push(ch);
             }
         }
 
+        // Flush any remaining content
         if !current.is_empty() {
             tokens.push(Token {
                 text: current,
