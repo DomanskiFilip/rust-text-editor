@@ -23,7 +23,7 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libdbus-1-dev libgtk-3-dev libwayland-dev
+          sudo apt-get install -y libdbus-1-dev libgtk-3-dev libwayland-dev libx11-dev libxkbcommon-dev
 
       - name: Build
         run: cargo build --release --target x86_64-unknown-linux-gnu
@@ -31,7 +31,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: quick-notepad-linux-x86_64
+          name: quick-notepad-linux
           path: target/x86_64-unknown-linux-gnu/release/quick
           if-no-files-found: error
 
@@ -48,7 +48,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release-assets/*
+          files: release-assets/quick
           generate_release_notes: true
           draft: false
           prerelease: false
