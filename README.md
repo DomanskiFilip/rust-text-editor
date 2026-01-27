@@ -55,35 +55,25 @@ A modern, dual-mode text editor written in Rust that runs both in the terminal (
 
 ### Linux
 ```bash
-# Download latest release
-wget (no release yet -> build from source)
+wget https://github.com/DomanskiFilip/quick_notepad/releases/latest/download/quick
 
-# Extract
-tar xzf quick-notepad-1.0.0-linux-x86_64.tar.gz
-cd quick-notepad-1.0.0-linux-x86_64
+# Make it executable
+chmod +x quick
 
-# Install
-./install.sh
+# Move to PATH
+mkdir -p ~/.local/bin
+mv quick ~/.local/bin/
 
-# Reload your shell
+# Reload your shell (choose one based on your shell)
+# For Bash/Zsh:
 source ~/.bashrc
-```
-
-Done!
-
-### Verify Download (Optional)
-```bash
-# Download checksum
-wget (no release yet -> build from source)
-
-# Verify
-sha256sum -c quick-notepad-1.0.0-linux-x86_64.tar.gz.sha256
+# For Fish:
+exec fish
 ```
 
 ### Uninstall
 ```bash
-cd quick-notepad-1.0.0-linux-x86_64
-./uninstall.sh
+rm ~/.local/bin/quick
 ```
 
 ### Build from Source
@@ -91,9 +81,11 @@ cd quick-notepad-1.0.0-linux-x86_64
 git clone https://github.com/DomanskiFilip/quick_notepad
 cd quick-notepad
 ./build-dist.sh
-cd quick-notepad-1.0.0-linux-x86_64
+cd quick-notepad-[VERSION]-linux-x86_64
 ./install.sh
 ```
+
+as you can see source has my build script: ./build-dist.sh which creates these scripts: ./install.sh and ./uninstall.sh in cd quick-notepad-[VERSION]-linux-x86_64
 
 <img width="1024" height="1024" alt="image" src="https://github.com/user-attachments/assets/74ae2248-706e-4970-ada4-f67a48003c86" />
 icon generated using nano banana
