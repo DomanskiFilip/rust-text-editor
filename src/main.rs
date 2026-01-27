@@ -5,7 +5,25 @@ mod gui;
 use std::env;
 
 fn main() {
+    
     let args: Vec<String> = env::args().collect();
+    let home = env::var("HOME").unwrap_or_default();
+    let expected_path = format!("{}/.local/bin/quick", home);
+    
+    // Get current executable path
+    let current_exe = env::current_exe().expect("Failed to get current path");
+
+    // SELF-INSTALL LOGIC
+    // If we are NOT running from ~/.local/bin and no specific flags are passed, 
+    // we assume the user just "clicked" it for the first time.
+    if !current_exe.to_string_lossy().contains(&expected_path) && args.len() == 1 {
+        println!("✨ Quick Notepad: First-time setup detected...");
+        install();
+        
+        // After installing, launch the GUI
+        gui::run(None);
+        return;
+    }
     
     // Check if GUI mode is requested
     let gui_mode = args.iter().any(|arg| arg == "--gui");
@@ -60,5 +78,61 @@ fn main() {
         };
         
         editor.run();
+    }
+    
+    fn install() {
+        use std::fs;
+        use std::env;
+        use std::path::Path;
+    
+        let home = env::var("HOME").expect("Could not find HOME directory");
+        let bin_dir = format!("{}/.local/bin", home);
+        let target_bin_path = format!("{}/quick", bin_dir);
+        let icon_dir = format!("{}/.local/share/icons/hicolor/512x512/apps", home);
+        let desktop_dir = format!("{}/.local/share/applications", home);
+    
+        // Move the binary to ~/.local/bin
+        let current_exe = env::current_exe().expect("Failed to get current path");
+        let _ = fs::create_dir_all(&bin_dir);
+    
+        // Avoid infinite loops: only copy if we aren't already the target
+        if current_exe != Path::new(&target_bin_path) {
+            if let Err(e) = fs::copy(&current_exe, &target_bin_path) {
+                eprintln!("❌ Failed to move binary to bin: {}", e);
+            } else {
+                // Set executable permissions on the new copy
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(&target_bin_path, fs::Permissions::from_mode(0o755));
+                }
+                println!("✅ Binary installed to ~/.local/bin");
+            }
+        }
+    
+        // Extract Baked-in Icon
+        let icon_bytes = include_bytes!("../assets/icon.png");
+        let _ = fs::create_dir_all(&icon_dir);
+        let icon_path = format!("{}/quick_notepad.png", icon_dir);
+        let _ = fs::write(&icon_path, icon_bytes);
+    
+        // Create Desktop Entry
+        let _ = fs::create_dir_all(&desktop_dir);
+        let desktop_entry = format!(
+            "[Desktop Entry]\n\
+            Name=Quick Notepad\n\
+            Comment=Fast TUI/GUI Text Editor\n\
+            Exec={bin} --gui %F\n\
+            Icon=quick_notepad\n\
+            Type=Application\n\
+            Categories=Utility;TextEditor;\n\
+            Terminal=false\n\
+            MimeType=text/plain;\n",
+            bin = target_bin_path
+        );
+    
+        let _ = fs::write(format!("{}/quick-notepad.desktop", desktop_dir), desktop_entry);
+        
+        println!("✅ Desktop integration complete! You can now find Quick Notepad in your menu.");
     }
 }
