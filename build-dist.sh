@@ -2,7 +2,7 @@
 
 set -e
 
-VERSION="0.0.1"
+VERSION="1.0.0"
 DIST_NAME="quick-notepad-${VERSION}-linux-x86_64"
 
 echo "╔════════════════════════════════════════╗"
