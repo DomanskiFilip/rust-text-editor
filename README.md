@@ -56,15 +56,21 @@ A modern, dual-mode text editor written in Rust that runs both in the terminal (
 ### Linux
 ```bash
 wget https://github.com/DomanskiFilip/quick_notepad/releases/latest/download/quick
+```
 
-# Make it executable
+make it executable
+```bash
 chmod +x quick
+```
 
-# Move to PATH
-mkdir -p ~/.local/bin
-mv quick ~/.local/bin/
+run it first time for it to automatically install
+```bash
+./quick
+```
 
-# Reload your shell (choose one based on your shell)
+if the app doesnt show up try reloading your shell:
+
+```bash
 # For Bash/Zsh:
 source ~/.bashrc
 # For Fish:
