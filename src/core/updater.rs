@@ -149,7 +149,7 @@ impl Updater {
         false
     }
 
-    // Download and install the update (Linux only)
+    // Download and install the update
     pub fn perform_update(&self) -> Result<(), Box<dyn std::error::Error>> {
         let client = reqwest::blocking::Client::builder()
             .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
