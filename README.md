@@ -89,7 +89,7 @@ cd quick-notepad-[VERSION]-linux-x86_64
 ./install.sh
 ```
 
-as you can see source has my build script: ./build-dist.sh which creates these scripts: ./install.sh and ./uninstall.sh in cd quick-notepad-[VERSION]-linux-x86_64
+as you can see source has my build script: ./build-dist.sh which creates these scripts: ./install.sh and ./uninstall.sh in quick-notepad-[VERSION]-linux-x86_64
 
 <img width="1024" height="1024" alt="image" src="https://github.com/user-attachments/assets/74ae2248-706e-4970-ada4-f67a48003c86" />
 icon generated using nano banana
