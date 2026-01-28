@@ -38,7 +38,7 @@ A modern, dual-mode text editor written in Rust that runs both in the terminal (
  
  - Zero Heavy Dependencies: Built with minimal external crates
  
- - **size about 4.4MB, 3 times smaller than "micro" (12MB<)**
+ - **size about 8MB, compared to "micro" 12MB<**
 
 ## Commands
 
@@ -52,19 +52,28 @@ A modern, dual-mode text editor written in Rust that runs both in the terminal (
 | `quick --shortcuts` | Show all keyboard shortcuts |
 
 ## Installation
-
-### Linux
+### step by step:
+download the app:
 ```bash
 wget https://github.com/DomanskiFilip/quick_notepad/releases/latest/download/quick
+```
 
-# Make it executable
+make it executable:
+```bash
 chmod +x quick
+```
 
-# Move to PATH
-mkdir -p ~/.local/bin
-mv quick ~/.local/bin/
+run it first time for it to automatically install:
+```bash
+./quick
+```
+### one liner:
+```bash
+curl -L https://github.com/DomanskiFilip/quick_notepad/releases/latest/download/quick -o quick && chmod +x quick && ./quick
+```
 
-# Reload your shell (choose one based on your shell)
+### if the app doesnt show up try reloading your shell:
+```bash
 # For Bash/Zsh:
 source ~/.bashrc
 # For Fish:
@@ -85,7 +94,7 @@ cd quick-notepad-[VERSION]-linux-x86_64
 ./install.sh
 ```
 
-as you can see source has my build script: ./build-dist.sh which creates these scripts: ./install.sh and ./uninstall.sh in cd quick-notepad-[VERSION]-linux-x86_64
+as you can see source has my build script: ./build-dist.sh which creates these scripts: ./install.sh and ./uninstall.sh in quick-notepad-[VERSION]-linux-x86_64
 
 <img width="1024" height="1024" alt="image" src="https://github.com/user-attachments/assets/74ae2248-706e-4970-ada4-f67a48003c86" />
 icon generated using nano banana
