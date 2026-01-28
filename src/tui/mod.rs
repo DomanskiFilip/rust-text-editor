@@ -593,9 +593,10 @@ impl TerminalEditor {
     fn save_file(&mut self) -> Result<(), std::io::Error> {
         use std::fs;
 
-        let filename_opt = self.tab_manager.current_tab().filename.clone();
+        // CRITICAL FIX: Use filepath (full path) instead of filename (display name)
+        let filepath_opt = self.tab_manager.current_tab().filepath.clone();
 
-        if let Some(filename) = filename_opt {
+        if let Some(filepath) = filepath_opt {
             let last_line = self
                 .view
                 .buffer
@@ -613,7 +614,7 @@ impl TerminalEditor {
                 .collect();
             let content = content_lines.join("\n");
 
-            match fs::write(&filename, content) {
+            match fs::write(&filepath, content) {
                 Ok(_) => {
                     self.tab_manager.current_tab_mut().has_unsaved_changes = false;
                     let _ = self.tab_manager.save_session();
@@ -649,15 +650,30 @@ impl TerminalEditor {
                                         break;
                                     }
                                     
-                                    let raw_ext = std::path::Path::new(&filename)
-                                                .extension()
-                                                .map(|ext| ext.to_string_lossy().into_owned());
-                                            
+                                    // Canonicalize the path to get absolute path
+                                    let path_buf = std::fs::canonicalize(&filename)
+                                        .unwrap_or_else(|_| {
+                                            // If file doesn't exist yet, build absolute path manually
+                                            let mut current_dir = std::env::current_dir().unwrap_or_default();
+                                            current_dir.push(&filename);
+                                            current_dir
+                                        });
+                                    
+                                    let full_path = path_buf.to_string_lossy().into_owned();
+                                    let display_name = path_buf
+                                        .file_name()
+                                        .map(|name| name.to_string_lossy().into_owned())
+                                        .unwrap_or_else(|| filename.clone());
+                                    
+                                    let raw_ext = path_buf.extension()
+                                        .map(|ext| ext.to_string_lossy().into_owned());
                                     let friendly_filetype = get_friendly_filetype(raw_ext);
 
-                                    self.tab_manager.current_tab_mut().filename = Some(filename.clone());
+                                    // Store BOTH the display name and the full path
+                                    self.tab_manager.current_tab_mut().filename = Some(display_name.clone());
+                                    self.tab_manager.current_tab_mut().filepath = Some(full_path.clone());
                                     self.tab_manager.current_tab_mut().filetype = friendly_filetype.clone();
-                                    self.view.set_filename_and_filetype(Some(filename.clone()), friendly_filetype.clone());
+                                    self.view.set_filename_and_filetype(Some(display_name), friendly_filetype);
 
                                     let last_line = self
                                         .view
@@ -676,7 +692,8 @@ impl TerminalEditor {
                                         .collect();
                                     let content = content_lines.join("\n");
 
-                                    match fs::write(&filename, content) {
+                                    // Save to the FULL PATH
+                                    match fs::write(&full_path, content) {
                                         Ok(_) => {
                                             self.tab_manager
                                                 .current_tab_mut()
